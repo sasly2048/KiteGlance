@@ -1,6 +1,17 @@
 <h1 align="center"> Kite Glance </h1>
 <p align="center">
-  <img width="256" height="256" alt="Kite Glance Logo" src="https://github.com/user-attachments/assets/6183b6b7-e191-4ce8-8e75-2c092f92f65e" />
+  <picture>
+    <source
+      media="(prefers-color-scheme: dark)"
+      srcset="https://github.com/user-attachments/assets/b01833fd-a224-4864-9d54-f6fc5ace0c8c">
+    <source
+      media="(prefers-color-scheme: light)"
+      srcset="https://github.com/user-attachments/assets/d95edb28-73cd-473a-89fc-7034bdfe562c">
+    <img
+      src="https://github.com/user-attachments/assets/b01833fd-a224-4864-9d54-f6fc5ace0c8c"
+      alt="Kite Glance banner"
+      >
+  </picture>
 </p>
 
 <p align="center">
