@@ -5,6 +5,15 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-07-27
+
+ ### Added
+- Added four new mesh-gradient backdrops (Sunrise, Noon, Evening, and Midnight), expanding the time-of-day system from four phases to eight for smoother visual transitions.
+
+### Fixed
+- Fixed desktop-pinned widgets disappearing when **Show Desktop** minimizes windows.
+- Desktop pin mode now automatically restores the widget after Win+D, the taskbar Show Desktop button, or four-finger touchpad gestures trigger a minimize event.
+
 ## [Unreleased]
 
 ### Fixed
