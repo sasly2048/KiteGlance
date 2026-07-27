@@ -7,19 +7,26 @@ namespace KiteGlance.Services;
 /// given the mode and the clock. Pure decision logic -- no WPF, no file IO --
 /// so the time boundaries can be unit tested like the P&L math is.
 ///
-/// The set is four pre-rendered mesh gradients (see Assets/), one per phase
+/// The set is eight pre-rendered mesh gradients (see Assets/), two per phase
 /// of the day. Rendering them at build time keeps the app free of a raster
-/// pipeline; four PNGs cost ~230 KB total.
+/// pipeline while giving each phase a distinct early and late look.
 /// </summary>
 public static class BackdropService
 {
     public const string Dawn = "Assets/backdrop-dawn.png";
+    public const string Sunrise = "Assets/backdrop-sunrise.png";
     public const string Day = "Assets/backdrop-day.png";
+    public const string Noon = "Assets/backdrop-noon.png";
     public const string Dusk = "Assets/backdrop-dusk.png";
+    public const string Evening = "Assets/backdrop-evening.png";
     public const string Night = "Assets/backdrop-night.png";
+    public const string Midnight = "Assets/backdrop-midnight.png";
 
     /// <summary>All built-in backdrops, in day order.</summary>
-    public static readonly string[] Set = { Dawn, Day, Dusk, Night };
+    public static readonly string[] Set =
+    {
+        Dawn, Sunrise, Day, Noon, Dusk, Evening, Night, Midnight
+    };
 
     /// <summary>
     /// The built-in image for a moment in time, per mode. Custom mode is not
@@ -39,10 +46,14 @@ public static class BackdropService
     /// </summary>
     private static string ByHour(DateTime now) => now.Hour switch
     {
-        >= 5 and < 8 => Dawn,
-        >= 8 and < 17 => Day,
-        >= 17 and < 20 => Dusk,
-        _ => Night
+        >= 5 and < 7 => Dawn,
+        >= 7 and < 8 => Sunrise,
+        >= 8 and < 13 => Day,
+        >= 13 and < 17 => Noon,
+        >= 17 and < 19 => Dusk,
+        >= 19 and < 20 => Evening,
+        >= 20 or < 1 => Night,
+        _ => Midnight
     };
 
     /// <summary>

@@ -37,6 +37,8 @@ public static class DesktopPin
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TOOLWINDOW = 0x00000080;
     private const int WM_WINDOWPOSCHANGING = 0x0046;
+    private const int WM_SYSCOMMAND = 0x0112;
+    private const int SC_MINIMIZE = 0xF020;
     private const uint SWP_NOZORDER = 0x0004;
 
     private static readonly IntPtr HWND_BOTTOM = new(1);
@@ -127,6 +129,18 @@ public static class DesktopPin
     private static IntPtr KeepAtBottom(
         IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        // Show Desktop, including four-finger touchpad gestures, sends a
+        // minimize command to ordinary top-level windows. Ignore it while
+        // desktop-pinned; explicit quit remains available from the tray.
+        if (msg == WM_SYSCOMMAND
+            && (wParam.ToInt64() & 0xFFF0) == SC_MINIMIZE)
+        {
+            SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0,
+                0x0001 /*NOSIZE*/ | 0x0002 /*NOMOVE*/ | 0x0010 /*NOACTIVATE*/);
+            handled = true;
+            return IntPtr.Zero;
+        }
+
         if (msg == WM_WINDOWPOSCHANGING)
         {
             var pos = Marshal.PtrToStructure<WINDOWPOS>(lParam);

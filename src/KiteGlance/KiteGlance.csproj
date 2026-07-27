@@ -58,9 +58,13 @@
     <Resource Include="Assets\app.ico" />
     <Resource Include="Assets\grain.png" />
     <Resource Include="Assets\backdrop-dawn.png" />
+    <Resource Include="Assets\backdrop-sunrise.png" />
     <Resource Include="Assets\backdrop-day.png" />
+    <Resource Include="Assets\backdrop-noon.png" />
     <Resource Include="Assets\backdrop-dusk.png" />
+    <Resource Include="Assets\backdrop-evening.png" />
     <Resource Include="Assets\backdrop-night.png" />
+    <Resource Include="Assets\backdrop-midnight.png" />
   </ItemGroup>
 
 </Project>

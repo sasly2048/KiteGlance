@@ -203,7 +203,15 @@ public partial class MainWindow : Window
         StateChanged += (_, _) =>
         {
             if (_state.Pin == PinMode.Desktop && WindowState == WindowState.Minimized)
-                WindowState = WindowState.Normal;
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (_state.Pin != PinMode.Desktop) return;
+                    Show();
+                    WindowState = WindowState.Normal;
+                    DesktopPin.Glue(this);
+                }, System.Windows.Threading.DispatcherPriority.Background);
+            }
         };
 
         // Animate the CONTENT: with AllowsTransparency=false the window surface
