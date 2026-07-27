@@ -50,8 +50,8 @@ It was built to feel like a first-party part of Windows rather than a browser ta
 
 - **Live portfolio P&L** — overall and per-holding, split into Stocks and Funds tabs.
 - **Accurate mutual-fund NAVs** — Kite's holdings endpoint returns a stale settlement NAV for funds; Kite Glance overrides it with the official live NAV from [AMFI](https://www.amfiindia.com), so the numbers match what Coin shows.
-- **Pin to desktop** — bottom-most z-order enforcement keeps the widget under every app window without leaving DWM's normal top-level composition path, so it renders with full hardware acceleration and can't black out. Out of Alt+Tab and Task View; restores itself immediately if Win+D minimizes it. "Always on top" and "Float freely" are also available.
-- **Backgrounds** — four pre-rendered mesh-gradient backdrops (dawn, day, dusk, night) that switch with the time of day by default, or rotate through the set, or hold on one; a custom image is also supported. Changes crossfade.
+- **Pin to desktop** — bottom-most z-order enforcement keeps the widget beneath every application while remaining in DWM's normal composition path for full hardware acceleration. The widget automatically restores itself when Show Desktop (Win+D, taskbar button, or touchpad gestures) issues a minimize command, ensuring desktop-pinned widgets never disappear.
+- **Backgrounds** — eight pre-rendered mesh-gradient backdrops spanning the full day (sunrise, morning, late morning, noon, afternoon, sunset, evening, and midnight). They automatically follow the time of day, can rotate through the full cycle, or stay fixed on a chosen backdrop. A custom image is also supported, and all transitions crossfade smoothly.
 - **Native material** — DWM corners, dark frame, and shadow via `DwmSetWindowAttribute`.
 - **Considered motion** — a spring easing system for layout, a separate quartic ease for numbers (money never overshoots), a skeleton loading state, and a "live" indicator that only pulses while the market is open.
 - **Honest about staleness** — if a sync fails or live NAVs are unavailable, the widget says so rather than showing numbers that quietly disagree.
@@ -203,7 +203,7 @@ The widget refreshes automatically during market hours (Mon–Fri, 09:15–15:30
 
 ### Pin modes
 
-- **Pin to desktop** (default) — bottom-most z-order: under every app, out of Alt+Tab, restores itself if Win+D minimizes it.
+- **Pin to desktop** (default) — bottom-most z-order beneath every application, hidden from Alt+Tab and Task View. If Show Desktop (Win+D, taskbar button, or four-finger touchpad gesture) minimizes the window, Kite Glance immediately restores itself so the desktop widget remains visible.
 - **Always on top** — floats above every window; useful while actively trading.
 - **Float freely** — an ordinary window.
 
@@ -211,9 +211,9 @@ The widget refreshes automatically during market hours (Mon–Fri, 09:15–15:30
 
 The menu's **Background** submenu offers:
 
-- **Time of day** (default) — dawn, day, dusk, or night, following the clock.
-- **Rotate** — steps through the same four images every few hours.
-- **Graphite** — one fixed backdrop (the day image).
+- **Time of day (default)** — automatically transitions through eight phases: Sunrise, Morning, Late Morning, Noon, Afternoon, Sunset, Evening, and Midnight, following the system clock.
+- **Rotate** — cycles through all eight backdrops automatically.
+- **Graphite** — locks the widget to the neutral noon backdrop (or whichever backdrop is designated as Graphite).
 - **Choose image…** — pick any picture; it's copied locally, decoded at the widget's size, and given a readability scrim so the numbers stay legible over anything.
 
 Switching backgrounds crossfades rather than cutting.
@@ -231,10 +231,14 @@ src/KiteGlance/
 ├── TrayTheme.cs               Owner-drawn dark tray menu
 ├── Assets/
 │   ├── app.ico                 Application + tray icon
-│   ├── backdrop-dawn.png       ─┐
-│   ├── backdrop-day.png        │  Pre-rendered mesh-gradient backdrops
-│   ├── backdrop-dusk.png       │  (see Backgrounds, below)
-│   ├── backdrop-night.png     ─┘
+│   ├── backdrop-sunrise.png
+│   ├── backdrop-morning.png
+│   ├── backdrop-late-morning.png
+│   ├── backdrop-noon.png
+│   ├── backdrop-afternoon.png
+│   ├── backdrop-sunset.png
+│   ├── backdrop-evening.png
+│   ├── backdrop-midnight.png     
 │   └── grain.png               Dither/grain overlay tile
 ├── Motion/
 │   ├── SpringEase.cs          Damped-harmonic-oscillator easing for layout
