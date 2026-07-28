@@ -1,5 +1,6 @@
 using System.IO;
 using System.Security.Cryptography;
+using System.Security.Cryptography.ProtectedData;
 using System.Text;
 using System.Text.Json;
 

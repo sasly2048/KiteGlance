@@ -5,59 +5,32 @@ obj/
 *.dll
 *.exe
 *.pdb
-*.so
-*.dylib
-*.jar
-*.war
-*.class
+*.config
+*.manifest
 
 # Dependencies
 packages/
 node_modules/
 .nuget/
-.nyc_output/
-coverage/
 
 # Logs
 *.log
-**/logs/
 
-# Environment specific
+# Environment
 .env
 .env.local
-.env.*
-!src/KiteGlance/.env.example
+*.env.*
 
-# OS generated files
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# IDE
-.vs/
-.idea/
-*.swp
-*.swo
-*~
+# Editors
 .vscode/
-
-# Testing
-TestResults/
-
-# User-specific
+.idea/
+*.userprefs
 *.user
+*.suo
 *.userosscache
 *.sln.docstates
 
-# Build results
-[Dd]ebug/
-[Dd]ebugPublic/
-[Rr]elease/
-[Rr]eleases/
-x64/
-x86/
-build/
-bld/
-[Bb]in/
-[Oo]bj/
+# OS
+.DS_Store
+Thumbs.db
 ```
