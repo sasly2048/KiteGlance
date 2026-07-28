@@ -33,6 +33,11 @@
 ![Release](https://img.shields.io/github/v/release/sasly2048/KiteGlance)
 ![Runtime](https://img.shields.io/badge/Runtime-.NET%208-blueviolet)
 </div>
+<div align="center">
+
+  [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/sasly204800)
+
+</div>
 
 > **Not affiliated with Zerodha.** This is an independent, open-source client for the public Kite Connect API. See the [Disclaimer](#disclaimer).
 
