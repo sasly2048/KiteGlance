@@ -325,7 +325,20 @@ public class Holding
     public string Symbol { get; set; } = "";
     public decimal Qty { get; set; }
     public decimal AvgPrice { get; set; }
-    public decimal LastPrice { get; set; }
+
+    private decimal _lastPrice;
+
+    /// <summary>
+    /// The last traded price. While awaiting a price update from Kite, this
+    /// falls back to AvgPrice so the holding is valued at cost instead of
+    /// showing zero.
+    /// </summary>
+    public decimal LastPrice
+    {
+        get => AwaitingPrice && _lastPrice == 0m ? AvgPrice : _lastPrice;
+        set => _lastPrice = value;
+    }
+
     public bool IsMutualFund { get; set; }
 
     /// <summary>Kite has not priced these units yet; held at cost.</summary>
