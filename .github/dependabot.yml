@@ -1,0 +1,45 @@
+version: 2
+updates:
+  # Maintain dependencies for .NET
+  - package-ecosystem: "nuget"
+    directory: "/src/KiteGlance"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "deps"
+    groups:
+      microsoft-packages:
+        patterns:
+          - "Microsoft.*"
+          - "System.*"
+
+  # Test project dependencies
+  - package-ecosystem: "nuget"
+    directory: "/tests/KiteGlance.Tests"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "testing"
+    commit-message:
+      prefix: "test-deps"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels:
+      - "ci/cd"
+      - "dependencies"
+    commit-message:
+      prefix: "ci"

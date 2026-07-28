@@ -1,0 +1,25 @@
+# Code Owners for Kite Glance
+# These users are responsible for reviewing changes in specific areas
+
+# Default owners for everything in the repo
+* @sasly2048
+
+# Core services - business logic and API integrations
+/src/KiteGlance/Services/ @sasly2048
+
+# UI components - WPF views and view models
+/src/KiteGlance/ViewModels/ @sasly2048
+/src/KiteGlance/*.xaml @sasly2048
+
+# Windows interop - low-level OS integration
+/src/KiteGlance/Interop/ @sasly2048
+
+# Tests - all test files
+/tests/ @sasly2048
+
+# Build scripts and CI/CD
+/scripts/ @sasly2048
+/.github/workflows/ @sasly2048
+
+# Documentation
+*.md @sasly2048

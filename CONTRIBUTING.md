@@ -1,138 +1,187 @@
 # Contributing to Kite Glance
 
-Thanks for considering a contribution. This is a small, opinionated
-desktop widget, so the bar for changes is "does this make the product
-feel more like a first-party app" — not "does this add a feature."
+Thank you for your interest in contributing! This document provides guidelines and setup instructions.
 
-## Before you start
+## Development Setup
 
-For anything beyond a small fix, **open an issue first** describing what
-you want to change and why. This saves everyone time if the direction
-doesn't fit the project.
+### Prerequisites
 
-## Development setup
+- **.NET 8 SDK** (latest patch version)
+- **Windows 11** (22H2 or newer recommended)
+- **Visual Studio 2022** or **VS Code** with C# extension
+- **Git**
 
-**Prerequisites**
+### Clone and Build
 
-- Windows 11 (22H2+ recommended — see the [Acrylic material](#windows-version)
-  note below)
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [Python 3](https://www.python.org/downloads/) — required to run `scripts/preflight.py` before opening a PR
-- A Kite Connect app — see [README § Configuration](README.md#configuration)
+```bash
+git clone https://github.com/sasly2048/KiteGlance.git
+cd KiteGlance
 
-```powershell
-git clone https://github.com/<your-username>/kite-glance.git
-cd kite-glance
-
-# Optional: set your Kite Connect key/secret as environment variables.
-# (You can also just enter them in the app's Settings dialog on first run.)
-# The app reads real env vars, NOT a .env file -- see README for a snippet
-# that loads .env into your shell if you prefer keeping them in a file.
-$env:KITE_API_KEY = "your_key"
-$env:KITE_API_SECRET = "your_secret"
-
-cd src/KiteGlance
+# Restore dependencies
 dotnet restore
-dotnet run
+
+# Run tests
+dotnet test tests/KiteGlance.Tests/KiteGlance.Tests.csproj
+
+# Build the application
+dotnet build src/KiteGlance/KiteGlance.csproj
+
+# Run (Windows only)
+dotnet run --project src/KiteGlance/KiteGlance.csproj
 ```
 
-### Windows version
+### Environment Variables (Optional)
 
-The acrylic backdrop requires Windows 11 22H2+
-(`DwmSetWindowAttribute` / `DWMSBT_TRANSIENTWINDOW`). On older builds the
-app falls back to a solid dark background automatically — this is
-intentional, not a bug, so don't "fix" the fallback path away.
+Create a `.env` file or set environment variables for local development:
 
-## Code style
-
-- **C# files must be pure ASCII.** No em dashes, no smart quotes, no
-  currency symbols as literal characters — use escapes (`\u20B9` for ₹,
-  `\u2212` for a true minus sign). This project has been bitten more than
-  once by Windows PowerShell mangling UTF-8 on save; keeping source ASCII
-  makes that class of bug impossible.
-- **XAML resource keys**: run `scripts/preflight.py` (see below) before
-  opening a PR. `dotnet build` cannot catch a missing `StaticResource` —
-  that only fails at runtime, on first paint, with a stack trace that
-  doesn't point at your diff.
-- Match the existing two-space-outside/four-space-inside XAML indentation
-  and the comment style (a short "why", not a restatement of the code).
-- `UseWindowsForms=true` (needed for the tray icon) puts `System.Drawing`
-  in scope everywhere, which shadows `Brush`, `Color`, `Point`, `Font`,
-  `KeyEventArgs`, and others. Any new file touching WPF visuals needs
-  explicit `using X = System.Windows.Media.X;` aliases — see the top of
-  `MainWindow.xaml.cs` for the pattern.
-
-## Before opening a PR
-
-Run the pre-flight check. It catches the failure classes that `dotnet
-build` cannot, because XAML resource resolution happens at runtime, not
-compile time:
-
-```powershell
-python scripts/preflight.py
+```bash
+KITE_API_KEY=your_api_key
+KITE_API_SECRET=your_api_secret
+KITEGLANCE_DEBUG=1  # Enable debug logging
 ```
 
-It checks:
+See `.env.example` for reference.
 
-- Every `.xaml` file parses as valid XML
-- Every `StaticResource` / `FindResource` reference resolves to a real key
-- Every `Click=` / event handler in XAML exists in the code-behind
-- All `.cs` files are pure ASCII
-- Obvious `System.Drawing` / `System.Windows` type collisions
+## Project Structure
 
-Then run the unit tests, and confirm it builds and runs:
-
-```powershell
-dotnet test tests/KiteGlance.Tests
-
-cd src/KiteGlance
-dotnet build -c Debug
-dotnet run -c Debug
+```
+KiteGlance/
+├── src/KiteGlance/          # Main WPF application
+│   ├── Services/            # Business logic (KiteService, AmfiNavService, etc.)
+│   ├── ViewModels/          # MVVM view models
+│   ├── Interop/             # Windows API interop
+│   ├── Motion/              # Animation helpers
+│   └── State/               # Application state management
+├── tests/KiteGlance.Tests/  # Unit tests (cross-platform)
+├── scripts/                 # Build and installer scripts
+└── .github/workflows/       # CI/CD pipelines
 ```
 
-If you touch anything in `PnlMath.cs` — the P&L arithmetic — add or update a
-test in `tests/KiteGlance.Tests/PnlMathTests.cs`. That file exists because
-this exact logic shipped three separate bugs; the tests are what keep them
-from coming back. The test project is plain `net8.0` and runs anywhere.
+## Coding Standards
 
-> **On `.env`:** the app reads real process environment variables and does
-> not parse `.env` at runtime. `dotnet run` executes from `src/KiteGlance/`,
-> so a `.env` at the repo root is not picked up automatically — either enter
-> credentials in the Settings dialog, or load `.env` into your shell before
-> running (see [README § Environment Variables](README.md#environment-variables)).
+### C# Conventions
 
-## Design principles this project holds to
+- Use **C# 12** features where appropriate
+- **Nullable reference types** enabled (`#nullable enable`)
+- **Implicit usings** for cleaner code
+- **Expression-bodied members** for simple methods
+- **Pattern matching** over traditional conditionals
 
-If your change conflicts with one of these, it'll likely get pushback in
-review — not because the idea is bad, but because it's probably a
-different project:
+### Documentation
 
-- **Two motion laws, deliberately different.** Layout springs (a
-  `SpringEase` damped-harmonic-oscillator, not a bezier) — overshoot
-  reads as weight. Numbers ease, never overshoot — a rupee value should
-  never render, then correct itself.
-- **No invented facts.** If Kite hasn't priced a holding yet, say so —
-  don't treat `last_price: 0` as "worth nothing."
-- **A chart's color must agree with the number next to it.** The
-  Invested→Current delta bar is colored by *its own* movement, never by
-  an unrelated hero figure.
-- **Native material over faked glass.** DWM acrylic via
-  `DwmSetWindowAttribute`, not `AllowsTransparency=true` + a hand-painted
-  gradient (which disables DWM and blurs text).
-- **State persists.** Position, tab, expanded/collapsed, pin mode. A
-  widget that forgets where you put it is just a small window.
+- All public APIs must have XML documentation comments
+- Include `<summary>`, `<param>`, and `<returns>` tags
+- Document exceptions that may be thrown
+- Provide usage examples for complex APIs
 
-## Reporting bugs
+Example:
+```csharp
+/// <summary>
+/// Fetches live mutual fund NAVs from AMFI.
+/// </summary>
+/// <param name="isin">The ISIN code of the fund.</param>
+/// <returns>The current NAV, or null if unavailable.</returns>
+/// <exception cref="ArgumentException">Thrown when ISIN is invalid.</exception>
+public async Task<decimal?> GetNavAsync(string isin);
+```
 
-Open an issue with:
+### Testing
 
-- Windows version (`winver`) and CPU architecture (ARM64 / x64)
-- What you expected vs. what happened
-- The exact error text, if any (check `%APPDATA%\KiteGlance` for logs
-  won't help yet — there's no file logging; the Debug console output is
-  what there is)
+- Write unit tests for all new business logic
+- Tests must run on Linux (no WPF dependencies in test project)
+- Use descriptive test names: `Method_Scenario_ExpectedResult`
+- Include regression tests for bug fixes
+- Aim for >80% code coverage on core services
+
+Run tests before committing:
+```bash
+dotnet test -c Release --collect:"XPlat Code Coverage"
+```
+
+### Security Guidelines
+
+- Never log credentials, tokens, or personal data
+- Use DPAPI for credential storage (already implemented)
+- Validate all external inputs
+- Keep dependencies updated (check `dotnet list package --outdated`)
+
+## Pull Request Process
+
+1. **Fork** the repository
+2. **Create a branch** for your feature:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+3. **Make changes** following coding standards
+4. **Write/update tests** as needed
+5. **Run all tests** and ensure they pass
+6. **Update documentation** if API changes
+7. **Submit PR** with clear description
+
+### PR Checklist
+
+- [ ] Code follows project conventions
+- [ ] All tests pass
+- [ ] New code has test coverage
+- [ ] XML documentation added/updated
+- [ ] No sensitive data logged or committed
+- [ ] CHANGELOG.md updated (if applicable)
+
+## Architecture Decisions
+
+### Why No Dependency Injection Framework?
+
+The app is intentionally lightweight. Manual DI in `App.xaml.cs` keeps the binary small and avoids external dependencies for a single-window application.
+
+### Why WPF Instead of MAUI?
+
+WPF provides mature DWM integration for desktop widget behavior (bottom-most pinning, acrylic effects). MAUI's cross-platform abstraction doesn't support these Windows-specific features well.
+
+### Why Self-Contained Publish?
+
+Single-file self-contained builds ensure users don't need to install .NET separately. The ~70MB binary size is acceptable for the convenience.
+
+## Common Tasks
+
+### Adding a New Service
+
+1. Create class in `src/KiteGlance/Services/`
+2. Add XML documentation
+3. Write unit tests in `tests/KiteGlance.Tests/`
+4. Register in `MainWindow.xaml.cs` or `App.xaml.cs`
+
+### Updating Dependencies
+
+```bash
+# Check for outdated packages
+dotnet list package --outdated
+
+# Update a specific package
+dotnet add package PackageName --version X.Y.Z
+
+# Run tests after update
+dotnet test
+```
+
+### Debugging
+
+Set `KITEGLANCE_DEBUG=1` to enable:
+- Detailed log output to `%APPDATA%\KiteGlance\logs\kiteglance.log`
+- API response dumps to `%APPDATA%\KiteGlance\api-dump.json`
+
+## Reporting Issues
+
+When filing bugs, include:
+- Windows version (Win + R → `winver`)
+- App version (from Settings or About dialog)
+- Steps to reproduce
+- Expected vs actual behavior
+- Log file contents (if applicable)
 
 ## License
 
-By contributing, you agree your contributions are licensed under this
-project's [MIT License](LICENSE).
+By contributing, you agree that your contributions are licensed under the MIT License (same as the project).
+
+## Questions?
+
+Open an issue for discussion, or reach out via the contact information in the README.

@@ -1,59 +1,72 @@
-# ── Secrets ──────────────────────────────────────────────────────────────
-.env
-.env.local
-*.pfx
-*.p12
-*.snk
-
-# ── .NET build output ───────────────────────────────────────────────────
+```
+# Build artifacts
 bin/
 obj/
-out/
-dist/
-publish/
-installer/
-*.user
-*.userosscache
-*.suo
+*.dll
+*.exe
+*.pdb
+*.so
+*.dylib
+*.jar
+*.war
+*.class
+*.o
+*.obj
+*.out
+*.tmp
 
-# ── Visual Studio ────────────────────────────────────────────────────────
-.vs/
-*.vspscc
-*.vssscc
-*.pidb
-*.svclog
-*.scc
+# Dependencies
+packages/
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.egg-info/
+.target/
+.mypy_cache/
+.pytest_cache/
 
-# ── VS Code / Rider ──────────────────────────────────────────────────────
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*
+
+# Editors
 .vscode/
 .idea/
-*.DotSettings.user
+*.swp
+*.swo
 
-# ── NuGet ────────────────────────────────────────────────────────────────
-*.nupkg
-*.snupkg
-**/packages/*
-!**/packages/build/
-project.lock.json
-project.fragment.lock.json
-artifacts/
-
-# ── Test / coverage ──────────────────────────────────────────────────────
-TestResults/
-*.trx
-coverage/
-*.coverage
-*.coveragexml
-
-# ── OS cruft ─────────────────────────────────────────────────────────────
+# OS
 .DS_Store
 Thumbs.db
-desktop.ini
 
-# ── App runtime data (never ship a developer's own vault or dumps) ────────
-**/KiteGlance/state.json
-*.bin
-api-dump.json
-amfi-nav.txt
-logs/
-*.log
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+```
