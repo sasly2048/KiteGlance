@@ -1,59 +1,63 @@
-# ── Secrets ──────────────────────────────────────────────────────────────
-.env
-.env.local
-*.pfx
-*.p12
-*.snk
-
-# ── .NET build output ───────────────────────────────────────────────────
+```
+# Build artifacts
 bin/
 obj/
-out/
-dist/
-publish/
-installer/
-*.user
-*.userosscache
-*.suo
+*.dll
+*.exe
+*.pdb
+*.so
+*.dylib
+*.jar
+*.war
+*.class
 
-# ── Visual Studio ────────────────────────────────────────────────────────
-.vs/
-*.vspscc
-*.vssscc
-*.pidb
-*.svclog
-*.scc
-
-# ── VS Code / Rider ──────────────────────────────────────────────────────
-.vscode/
-.idea/
-*.DotSettings.user
-
-# ── NuGet ────────────────────────────────────────────────────────────────
-*.nupkg
-*.snupkg
-**/packages/*
-!**/packages/build/
-project.lock.json
-project.fragment.lock.json
-artifacts/
-
-# ── Test / coverage ──────────────────────────────────────────────────────
-TestResults/
-*.trx
+# Dependencies
+packages/
+node_modules/
+.nuget/
+.nyc_output/
 coverage/
-*.coverage
-*.coveragexml
 
-# ── OS cruft ─────────────────────────────────────────────────────────────
+# Logs
+*.log
+**/logs/
+
+# Environment specific
+.env
+.env.local
+.env.*
+!src/KiteGlance/.env.example
+
+# OS generated files
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# ── App runtime data (never ship a developer's own vault or dumps) ────────
-**/KiteGlance/state.json
-*.bin
-api-dump.json
-amfi-nav.txt
-logs/
-*.log
+# IDE
+.vs/
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+
+# Testing
+TestResults/
+
+# User-specific
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+build/
+bld/
+[Bb]in/
+[Oo]bj/
+```

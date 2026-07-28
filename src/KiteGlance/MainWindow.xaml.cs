@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Timers;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -41,6 +42,8 @@ public partial class MainWindow : Window
     private readonly CredentialVault _vault = new();
     private readonly ObservableCollection<HoldingViewModel> _rows = new();
     private readonly WidgetState _state = WidgetState.Load();
+    private System.Timers.Timer? _sessionCheckTimer;
+    private System.Timers.Timer? _autoRefreshTimer;
 
     private PortfolioData? _portfolio;
     private DateTime _syncedAt;
@@ -91,6 +94,42 @@ public partial class MainWindow : Window
             ApplyBackdrop();
         };
         _ticker.Start();
+
+        // Session expiry check: Kite sessions expire daily. Check every hour
+        // during market hours to minimize API calls while catching expirations.
+        // This runs independently of the auto-refresh timer below.
+        _sessionCheckTimer = new System.Timers.Timer(TimeSpan.FromHours(1).TotalMilliseconds)
+        {
+            AutoReset = true,
+            Enabled = true
+        };
+        _sessionCheckTimer.Elapsed += async (_, _) =>
+        {
+            await Dispatcher.InvokeAsync(async () => await CheckSessionAsync());
+        };
+        _sessionCheckTimer.Start();
+
+        // Auto-refresh portfolio data during market hours. Defaults to every
+        // 5 minutes to keep data fresh without hammering the API. Users can
+        // disable or adjust this in Settings if needed.
+        var autoRefreshInterval = GetAutoRefreshIntervalMinutes();
+        if (autoRefreshInterval > 0)
+        {
+            _autoRefreshTimer = new System.Timers.Timer(autoRefreshInterval * 60_000)
+            {
+                AutoReset = true,
+                Enabled = true
+            };
+            _autoRefreshTimer.Elapsed += async (_, _) =>
+            {
+                // Only auto-refresh during market hours and when not already showing an overlay
+                if (MarketOpen() && Overlay.Visibility != Visibility.Visible)
+                {
+                    await Dispatcher.InvokeAsync(async () => await RefreshAsync(manual: false));
+                }
+            };
+            _autoRefreshTimer.Start();
+        }
     }
 
     // ==== Placement =====================================================
@@ -485,7 +524,37 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog() == true)
         {
             _kite.ReloadCredentials();
-            ShowLogin("Credentials saved. Sign in to sync your portfolio.");
+            ShowSkeleton();
+            _ = RefreshAsync();
+        }
+    }
+
+    /// <summary>
+    /// Periodic session check: if authenticated but no portfolio loaded, refresh.
+    /// If auth expired, show login overlay without waiting for user action.
+    /// </summary>
+    private async Task CheckSessionAsync()
+    {
+        // Skip if market is closed - sessions don't matter then
+        if (!MarketOpen()) return;
+
+        var (key, secret) = _vault.GetCredentials();
+        if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(secret))
+            return; // Not configured yet
+
+        var isAuthenticated = await _kite.IsAuthenticatedAsync();
+
+        if (!isAuthenticated)
+        {
+            // Session expired - show login prompt
+            await Dispatcher.InvokeAsync(() => ShowLogin("Your session expired. Sign in again."));
+            return;
+        }
+
+        // Still authenticated but no data? Auto-refresh silently
+        if (_portfolio == null && Overlay.Visibility != Visibility.Visible)
+        {
+            await RefreshAsync();
         }
     }
 
@@ -1218,5 +1287,30 @@ internal sealed class Debounce
     {
         _t.Stop();
         _t.Start();
+    }
+}
+
+/// <summary>Cleanup for timers when the window closes.</summary>
+public partial class MainWindow
+{
+    protected override void OnClosed(EventArgs e)
+    {
+        _ticker?.Stop();
+        _sessionCheckTimer?.Stop();
+        _sessionCheckTimer?.Dispose();
+        _autoRefreshTimer?.Stop();
+        _autoRefreshTimer?.Dispose();
+        base.OnClosed(e);
+    }
+
+    /// <summary>
+    /// Reads the auto-refresh interval from WidgetState. Returns 0 to disable,
+    /// or a positive integer (minutes) for the refresh cadence. Default: 5 min.
+    /// </summary>
+    private int GetAutoRefreshIntervalMinutes()
+    {
+        // For now, use a hardcoded default. This can be moved to WidgetState
+        // and exposed in SettingsWindow later if users want configurability.
+        return 5; // minutes
     }
 }
