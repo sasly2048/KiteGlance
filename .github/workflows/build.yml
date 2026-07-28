@@ -44,7 +44,7 @@ jobs:
         run: dotnet test -c Release --logger "console;verbosity=detailed" --collect:"XPlat Code Coverage"
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-${{ github.run_id }}
@@ -92,7 +92,7 @@ jobs:
           -o publish/${{ matrix.rid }}
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: KiteGlance-${{ matrix.rid }}
           path: src/KiteGlance/publish/${{ matrix.rid }}/KiteGlance.exe

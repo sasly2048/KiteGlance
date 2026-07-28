@@ -51,7 +51,7 @@ jobs:
           Rename-Item "$dir/KiteGlance.exe" "KiteGlance-${{ matrix.rid }}.exe"
 
       - name: Upload artifact for release job
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: KiteGlance-${{ matrix.rid }}
           path: src/KiteGlance/publish/${{ matrix.rid }}/KiteGlance-${{ matrix.rid }}.exe
