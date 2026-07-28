@@ -2,16 +2,21 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using static System.Security.Cryptography.ProtectedData;
 
 namespace KiteGlance.Services;
 
-/// <summary>Credentials encrypted at rest with Windows DPAPI (per-user).</summary>
+/// <summary>
+/// Credentials encrypted at rest. Uses Windows DPAPI (per-user) on Windows,
+/// and an AES-256 fallback (key stored alongside the encrypted files) on
+/// other platforms so the vault also works in cross-platform CI/dev
+/// environments.
+/// </summary>
 public class CredentialVault
 {
     private readonly string _dir;
     private readonly string _credPath;
     private readonly string _tokenPath;
+    private readonly string _keyPath;
 
     public CredentialVault()
     {
@@ -23,6 +28,7 @@ public class CredentialVault
 
         _credPath = Path.Combine(_dir, "vault.bin");
         _tokenPath = Path.Combine(_dir, "token.bin");
+        _keyPath = Path.Combine(_dir, "vault.key");
     }
 
     // -- Credentials -----------------------------------------------
@@ -86,7 +92,7 @@ public class CredentialVault
         catch { /* ignore */ }
     }
 
-    // -- DPAPI -----------------------------------------------------
+    // -- DPAPI / cross-platform fallback ----------------------------
 
     // App-specific secondary entropy mixed into DPAPI. This is defense in
     // depth, not a secret: DPAPI already scopes the blob to the Windows user,
@@ -96,22 +102,26 @@ public class CredentialVault
     private static readonly byte[] Entropy =
         Encoding.UTF8.GetBytes("KiteGlance.v1.dpapi.entropy");
 
-    private static void Write(string path, string plaintext)
+    private void Write(string path, string plaintext)
     {
-        var blob = Protect(
-            Encoding.UTF8.GetBytes(plaintext), Entropy, DataProtectionScope.CurrentUser);
+        byte[] blob = OperatingSystem.IsWindows()
+            ? ProtectedData.Protect(
+                Encoding.UTF8.GetBytes(plaintext), Entropy, DataProtectionScope.CurrentUser)
+            : ProtectPortable(Encoding.UTF8.GetBytes(plaintext));
 
         File.WriteAllBytes(path, blob);
     }
 
-    private static string? Read(string path)
+    private string? Read(string path)
     {
         if (!File.Exists(path)) return null;
 
         try
         {
             var blob = File.ReadAllBytes(path);
-            var clear = Unprotect(blob, Entropy, DataProtectionScope.CurrentUser);
+            var clear = OperatingSystem.IsWindows()
+                ? ProtectedData.Unprotect(blob, Entropy, DataProtectionScope.CurrentUser)
+                : UnprotectPortable(blob);
             return Encoding.UTF8.GetString(clear);
         }
         catch
@@ -120,6 +130,55 @@ public class CredentialVault
             // the user re-enters credentials once. Acceptable one-time cost.
             return null;
         }
+    }
+
+    // Cross-platform fallback used on non-Windows systems where DPAPI is
+    // unavailable (e.g. Linux CI runners). Not as strong as DPAPI's OS-level
+    // user isolation, but keeps the vault functional everywhere. The key is
+    // generated once per machine/user profile and stored alongside the
+    // encrypted files.
+    private byte[] ProtectPortable(byte[] plaintext)
+    {
+        using var aes = Aes.Create();
+        aes.Key = GetOrCreatePortableKey();
+        aes.GenerateIV();
+
+        using var encryptor = aes.CreateEncryptor();
+        var cipher = encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
+
+        var result = new byte[aes.IV.Length + cipher.Length];
+        Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
+        Buffer.BlockCopy(cipher, 0, result, aes.IV.Length, cipher.Length);
+        return result;
+    }
+
+    private byte[] UnprotectPortable(byte[] blob)
+    {
+        using var aes = Aes.Create();
+        aes.Key = GetOrCreatePortableKey();
+
+        var ivLength = aes.IV.Length;
+        var iv = new byte[ivLength];
+        Buffer.BlockCopy(blob, 0, iv, 0, ivLength);
+        aes.IV = iv;
+
+        using var decryptor = aes.CreateDecryptor();
+        return decryptor.TransformFinalBlock(blob, ivLength, blob.Length - ivLength);
+    }
+
+    private byte[] GetOrCreatePortableKey()
+    {
+        if (File.Exists(_keyPath))
+        {
+            return Convert.FromBase64String(File.ReadAllText(_keyPath).Trim());
+        }
+
+        using var aes = Aes.Create();
+        aes.KeySize = 256;
+        aes.GenerateKey();
+
+        File.WriteAllText(_keyPath, Convert.ToBase64String(aes.Key));
+        return aes.Key;
     }
 
     private class Creds
