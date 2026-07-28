@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Timers;
@@ -155,8 +155,11 @@ public partial class MainWindow : Window
     /// <summary>Undock a laptop and a naive restore hurls the widget into the void.</summary>
     private static bool OnScreen(double l, double t)
     {
-        var sys = SystemParameters.VirtualScreen;
-        return l >= sys.Left - 40 && l <= sys.Right - 80 && t >= sys.Top - 10 && t <= sys.Bottom - 60;
+        double left = SystemParameters.VirtualScreenLeft;
+        double top = SystemParameters.VirtualScreenTop;
+        double width = SystemParameters.VirtualScreenWidth;
+        double height = SystemParameters.VirtualScreenHeight;
+        return l >= left - 40 && l <= left + width + 80 && t >= top - 10 && t <= top + height + 60;
     }
     public PinMode Pin
     {
@@ -1307,5 +1310,6 @@ public partial class MainWindow
         return 5; // minutes
     }
 }
+
 
 
