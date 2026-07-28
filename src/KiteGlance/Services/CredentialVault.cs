@@ -1,8 +1,8 @@
 using System.IO;
 using System.Security.Cryptography;
-using System.Security.Cryptography.ProtectedData;
 using System.Text;
 using System.Text.Json;
+using static System.Security.Cryptography.ProtectedData;
 
 namespace KiteGlance.Services;
 
@@ -98,7 +98,7 @@ public class CredentialVault
 
     private static void Write(string path, string plaintext)
     {
-        var blob = ProtectedData.Protect(
+        var blob = Protect(
             Encoding.UTF8.GetBytes(plaintext), Entropy, DataProtectionScope.CurrentUser);
 
         File.WriteAllBytes(path, blob);
@@ -111,7 +111,7 @@ public class CredentialVault
         try
         {
             var blob = File.ReadAllBytes(path);
-            var clear = ProtectedData.Unprotect(blob, Entropy, DataProtectionScope.CurrentUser);
+            var clear = Unprotect(blob, Entropy, DataProtectionScope.CurrentUser);
             return Encoding.UTF8.GetString(clear);
         }
         catch
