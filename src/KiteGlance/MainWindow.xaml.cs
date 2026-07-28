@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Timers;
@@ -1307,4 +1307,5 @@ public partial class MainWindow
         return 5; // minutes
     }
 }
+
 
