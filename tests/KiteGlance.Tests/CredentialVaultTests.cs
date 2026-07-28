@@ -29,7 +29,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void SaveCredentials_writes_encrypted_file()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         vault.SaveCredentials("test-api-key", "test-api-secret");
 
         var credFile = Path.Combine(_testDir, "KiteGlance", "vault.bin");
@@ -40,7 +40,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void GetCredentials_returns_saved_values()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         vault.SaveCredentials("my-api-key", "my-api-secret");
 
         var (apiKey, apiSecret) = vault.GetCredentials();
@@ -52,7 +52,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void GetApiKey_convenience_method_works()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         vault.SaveCredentials("key-123", "secret-456");
 
         Assert.Equal("key-123", vault.GetApiKey());
@@ -61,7 +61,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void GetApiSecret_convenience_method_works()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         vault.SaveCredentials("key-123", "secret-456");
 
         Assert.Equal("secret-456", vault.GetApiSecret());
@@ -70,7 +70,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void GetCredentials_returns_null_when_no_credentials_exist()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         
         var (apiKey, apiSecret) = vault.GetCredentials();
         
@@ -86,7 +86,7 @@ public class CredentialVaultTests : IDisposable
             Environment.SetEnvironmentVariable("KITE_API_KEY", "env-key", EnvironmentVariableTarget.Process);
             Environment.SetEnvironmentVariable("KITE_API_SECRET", "env-secret", EnvironmentVariableTarget.Process);
 
-            var vault = new CredentialVault();
+            var vault = new CredentialVault(_testDir);
             vault.SaveCredentials("disk-key", "disk-secret");
 
             var (apiKey, apiSecret) = vault.GetCredentials();
@@ -104,7 +104,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void SaveAccessToken_writes_token_file()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         vault.SaveAccessToken("test-access-token-123");
 
         var tokenFile = Path.Combine(_testDir, "KiteGlance", "token.bin");
@@ -114,7 +114,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void GetAccessToken_returns_saved_token()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         vault.SaveAccessToken("my-access-token");
 
         Assert.Equal("my-access-token", vault.GetAccessToken());
@@ -123,7 +123,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void ClearAccessToken_removes_token_file()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         vault.SaveAccessToken("temp-token");
         vault.ClearAccessToken();
 
@@ -134,7 +134,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void ClearAll_removes_both_files()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         vault.SaveCredentials("key", "secret");
         vault.SaveAccessToken("token");
         
@@ -147,7 +147,7 @@ public class CredentialVaultTests : IDisposable
     [Fact]
     public void GetCredentials_handles_corrupted_file_gracefully()
     {
-        var vault = new CredentialVault();
+        var vault = new CredentialVault(_testDir);
         var credFile = Path.Combine(_testDir, "KiteGlance", "vault.bin");
         
         // Write invalid encrypted data
