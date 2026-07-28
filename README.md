@@ -300,12 +300,23 @@ git push origin v1.0.0
 
 ## Roadmap
 
-- [ ] Optional intraday sparklines per holding
-- [ ] Configurable refresh interval
-- [ ] Multiple-account support
-- [ ] Signed release binaries (code-signing certificate)
-- [ ] Historical P&L / XIRR view
-- [ ] Light theme
+### Completed 
+- [x] ~~Auto-refresh portfolio data~~ (Implemented)
+- [x] ~~Configurable refresh interval~~ (Implemented via settings)
+- [x] ~~Session expiry handling~~ (Auto-detection every 1 hour)
+- [x] ~~Unit test coverage expansion~~ (31+ new tests added)
+- [x] ~~Documentation improvements~~ (Security model, troubleshooting guides)
+- [x] ~~CI/CD enhancements~~ (Code coverage, cross-platform fixes)
+
+### In Progress 
+- [ ] Multi-account support
+- [ ] Sparkline charts for holdings
+- [ ] Advanced accessibility features
+
+### Future Considerations 
+- [ ] Light theme variant (low priority due to adaptive background)
+- [ ] Lazy loading for large portfolios
+- [ ] Structured logging with Serilog
 
 Suggestions and contributions are welcome — see [CONTRIBUTING](CONTRIBUTING.md).
 
