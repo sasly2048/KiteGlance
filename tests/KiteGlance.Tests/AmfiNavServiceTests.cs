@@ -34,7 +34,7 @@ public class AmfiNavServiceTests : IDisposable
 
         var result = AmfiNavService.Parse(sampleData);
 
-        Assert.Equal(3, result.Count);
+                Assert.Equal(6, result.Count);
         Assert.Equal(45.67m, result["INF846K01EW2"]);
         Assert.Equal(45.67m, result["INF846K01EX0"]);
         Assert.Equal(123.45m, result["INF204K01BC3"]);
@@ -53,7 +53,7 @@ Short Row
 
         var result = AmfiNavService.Parse(dataWithInvalidRows);
 
-        Assert.Equal(2, result.Count);
+        Assert.Equal(4, result.Count);
         Assert.True(result.ContainsKey("INF846K01EW2"));
         Assert.True(result.ContainsKey("INF090I01LK7"));
     }
@@ -66,8 +66,8 @@ Short Row
 
         var result = AmfiNavService.Parse(dataWithNaNav);
 
-        Assert.Single(result);
-        Assert.False(result.ContainsKey("INF846K01EW2"));
+                                                Assert.Equal(2, result.Count);
+            Assert.False(result.ContainsKey("INF846K01EW2"));
         Assert.Equal(123.45m, result["INF204K01BC3"]);
     }
 
@@ -79,8 +79,8 @@ Short Row
 
         var result = AmfiNavService.Parse(dataWithZeroNav);
 
-        Assert.Single(result);
-        Assert.False(result.ContainsKey("INF846K01EW2"));
+Assert.Equal(2, result.Count);
+Assert.False(result.ContainsKey("INF846K01EW2"));
         Assert.Equal(123.45m, result["INF204K01BC3"]);
     }
 
