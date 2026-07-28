@@ -5,13 +5,14 @@ obj/
 *.dll
 *.exe
 *.pdb
-*.config
-*.manifest
+*.so
+*.dylib
+*.class
 
 # Dependencies
 packages/
 node_modules/
-.nuget/
+vendor/
 
 # Logs
 *.log
@@ -19,18 +20,27 @@ node_modules/
 # Environment
 .env
 .env.local
-*.env.*
+*.env
 
-# Editors
-.vscode/
-.idea/
-*.userprefs
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-# OS
+# OS generated files
 .DS_Store
 Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+htmlcov/
+*.coverage
+
+# Distribution / packaging
+dist/
+build/
+*.tar.gz
+*.whl
+*.egg-info/
 ```
