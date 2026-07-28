@@ -18,10 +18,10 @@ public class CredentialVault
     private readonly string _tokenPath;
     private readonly string _keyPath;
 
-    public CredentialVault()
-    {
+            public CredentialVault(string? baseDirectory = null)
+            {
         _dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                            baseDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "KiteGlance");
 
         Directory.CreateDirectory(_dir);
