@@ -20,7 +20,7 @@ jobs:
       matrix:
         rid: [win-arm64, win-x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run pre-flight
         run: python scripts/preflight.py

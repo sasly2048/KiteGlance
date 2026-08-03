@@ -20,7 +20,7 @@ jobs:
     name: Pre-flight checks
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run pre-flight
         run: python scripts/preflight.py
@@ -32,7 +32,7 @@ jobs:
     # math is verified on the fast, free runner before any Windows build.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8
         uses: actions/setup-dotnet@v4
@@ -62,7 +62,7 @@ jobs:
       matrix:
         rid: [win-arm64, win-x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8
         uses: actions/setup-dotnet@v4
