@@ -102,7 +102,10 @@ public static class Money
 
         if (a >= 10_000_000) return RS + (v / 10_000_000).ToString("0.00", IN) + "Cr";
         if (a >= 100_000) return RS + (v / 100_000).ToString("0.00", IN) + "L";
-        if (a >= 1_000) return RS + Math.Round(v).ToString("N0", IN);
+        // AwayFromZero, not the default ToEven. Banker's rounding turns
+        // Rs 2,500.50 into Rs 2,500 while Kite shows Rs 2,501 -- a visible Rs 1
+        // disagreement on any exact half.
+        if (a >= 1_000) return RS + Math.Round(v, MidpointRounding.AwayFromZero).ToString("N0", IN);
 
         return RS + v.ToString("0.##", IN);
     }

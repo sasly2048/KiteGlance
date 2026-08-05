@@ -26,6 +26,57 @@ public class CredentialVaultTests : IDisposable
         Environment.SetEnvironmentVariable("APPDATA", _testDir, EnvironmentVariableTarget.Process);
     }
 
+    /// <summary>
+    /// Flipping a byte of the ciphertext must be detected, not decrypted into
+    /// garbage. The old portable path was unauthenticated CBC, where a tampered
+    /// blob could yield valid-looking padding and hand back a corrupted API key
+    /// that the app would then send to Kite. DPAPI (Windows) has its own
+    /// integrity check; AES-GCM provides it everywhere else.
+    /// </summary>
+    [Fact]
+    public void Tampered_vault_never_yields_credentials()
+    {
+        var vault = new CredentialVault(_testDir);
+        vault.SaveCredentials("real-api-key", "real-api-secret");
+
+        var credFile = Path.Combine(_testDir, "KiteGlance", "vault.bin");
+        var blob = File.ReadAllBytes(credFile);
+
+        // Corrupt a byte near the end, inside the ciphertext/tag region.
+        blob[^2] ^= 0xFF;
+        File.WriteAllBytes(credFile, blob);
+
+        var (apiKey, apiSecret) = new CredentialVault(_testDir).GetCredentials();
+
+        Assert.Null(apiKey);
+        Assert.Null(apiSecret);
+    }
+
+    [Fact]
+    public void Truncated_vault_is_rejected_cleanly()
+    {
+        var vault = new CredentialVault(_testDir);
+        vault.SaveCredentials("k", "s");
+
+        var credFile = Path.Combine(_testDir, "KiteGlance", "vault.bin");
+        File.WriteAllBytes(credFile, new byte[] { 1, 2, 3 });
+
+        // Must degrade to "no credentials", not throw out of the vault.
+        var (apiKey, _) = new CredentialVault(_testDir).GetCredentials();
+        Assert.Null(apiKey);
+    }
+
+    [Fact]
+    public void Round_trip_survives_a_second_vault_instance()
+    {
+        new CredentialVault(_testDir).SaveCredentials("persisted-key", "persisted-secret");
+
+        var (apiKey, apiSecret) = new CredentialVault(_testDir).GetCredentials();
+
+        Assert.Equal("persisted-key", apiKey);
+        Assert.Equal("persisted-secret", apiSecret);
+    }
+
     [Fact]
     public void SaveCredentials_writes_encrypted_file()
     {

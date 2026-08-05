@@ -151,9 +151,26 @@ public static class Numeral
         }
     }
 
-    /// <summary>Forget cached values, e.g. when switching tabs.</summary>
+    /// <summary>
+    /// Forget cached values, e.g. when switching tabs.
+    ///
+    /// Marshalled onto the dispatcher. `Active` is walked by index inside
+    /// <see cref="OnFrame"/>, which runs on the UI thread; mutating it from any
+    /// other thread mid-frame shifts the indices under that loop and throws
+    /// ArgumentOutOfRangeException on the dispatcher, taking the app down.
+    /// TextBlock is thread-affine anyway, so this is where it has to happen.
+    /// </summary>
     public static void Reset(params TextBlock[] targets)
     {
+        if (targets.Length == 0) return;
+
+        var dispatcher = targets[0].Dispatcher;
+        if (!dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(() => Reset(targets));
+            return;
+        }
+
         foreach (var t in targets)
         {
             Live.Remove(t);

@@ -138,6 +138,17 @@ public partial class MainWindow : Window
     {
         var wa = SystemParameters.WorkArea;
 
+        // Pull a saved position back onto a display that still exists rather
+        // than only accepting or rejecting it: a monitor that moved in the
+        // virtual desktop leaves coordinates that are wrong but recoverable.
+        _state.ClampToVisibleArea(
+            SystemParameters.VirtualScreenLeft,
+            SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth,
+            SystemParameters.VirtualScreenHeight,
+            Width,
+            Height);
+
         if (_state.Left is { } l && _state.Top is { } t && OnScreen(l, t))
         {
             Left = l;

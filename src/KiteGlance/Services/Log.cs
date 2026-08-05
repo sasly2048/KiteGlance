@@ -65,7 +65,11 @@ public static class Log
                 Rotate();
 
                 var sb = new StringBuilder();
-                sb.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"));
+                // InvariantCulture: under a non-Gregorian system calendar
+                // (Thai Buddhist, Hijri) "yyyy" renders the era year, so log
+                // lines come out dated 2569 and stop sorting against anything.
+                sb.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff",
+                    System.Globalization.CultureInfo.InvariantCulture));
                 sb.Append("  [").Append(level.ToString().ToUpperInvariant()).Append("]  ");
                 sb.Append(message);
 

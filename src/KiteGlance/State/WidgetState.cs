@@ -88,11 +88,60 @@ public sealed class WidgetState
         {
             var dir = System.IO.Path.GetDirectoryName(Path_)!;
             Directory.CreateDirectory(dir);
-            File.WriteAllText(Path_, JsonSerializer.Serialize(this, Opts));
+
+            // Write-then-replace. A direct WriteAllText that is interrupted --
+            // power loss, or the process being killed mid-write, and Save runs
+            // on every window move -- leaves truncated JSON, which Load then
+            // discards, silently resetting position, tab, pin mode and
+            // backdrop. Replacing an already-complete temp file is atomic.
+            var tmp = Path_ + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, Opts));
+
+            if (File.Exists(Path_))
+            {
+                File.Replace(tmp, Path_, destinationBackupFileName: null);
+            }
+            else
+            {
+                File.Move(tmp, Path_);
+            }
         }
         catch
         {
             // Losing window position is not worth crashing over.
         }
     }
+
+    /// <summary>
+    /// Forces the saved position back onto a screen that currently exists.
+    /// Unplugging the monitor the widget was parked on would otherwise restore
+    /// it to coordinates no display covers -- the app runs, is invisible, and
+    /// offers no way back. Also rejects NaN/Infinity from a hand-edited file,
+    /// which would throw inside WPF layout.
+    /// </summary>
+    public void ClampToVisibleArea(double virtualLeft, double virtualTop,
+                                   double virtualWidth, double virtualHeight,
+                                   double windowWidth, double windowHeight)
+    {
+        if (Left is null || Top is null) return;
+
+        if (!IsUsable(Left.Value) || !IsUsable(Top.Value))
+        {
+            Left = null;
+            Top = null;
+            return;
+        }
+
+        // Keep at least a strip of the widget on screen so it can be grabbed.
+        const double margin = 48;
+        var maxLeft = virtualLeft + virtualWidth - margin;
+        var maxTop = virtualTop + virtualHeight - margin;
+        var minLeft = virtualLeft - (windowWidth - margin);
+        var minTop = virtualTop;
+
+        Left = Math.Clamp(Left.Value, minLeft, maxLeft);
+        Top = Math.Clamp(Top.Value, minTop, maxTop);
+    }
+
+    private static bool IsUsable(double v) => !double.IsNaN(v) && !double.IsInfinity(v);
 }
