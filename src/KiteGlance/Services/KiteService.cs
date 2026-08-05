@@ -12,7 +12,7 @@ public class KiteAuthException : Exception
     public KiteAuthException(string message) : base(message) { }
 }
 
-public class KiteService
+public class KiteService : IDisposable
 {
     private const string BaseUrl = "https://api.kite.trade";
 
@@ -28,6 +28,19 @@ public class KiteService
     private string _apiKey;
     private string? _accessToken;
 
+    // `_accessToken` is written from the hourly session check, from login, and
+    // from the 401 path inside GetAsync -- three callers on different threads.
+    // Without this, a boot-time auth check could overwrite a token that login
+    // had just obtained, or resurrect one that GetAsync had just cleared,
+    // surfacing as an intermittent "Session expired" right after signing in.
+    private readonly object _tokenGate = new();
+
+    private string? AccessToken
+    {
+        get { lock (_tokenGate) return _accessToken; }
+        set { lock (_tokenGate) _accessToken = value; }
+    }
+
     /// <summary>True when the last portfolio came back on Kite's stale MF
     /// NAVs because AMFI could not be reached. Surfaced so the UI can say so.</summary>
     public bool UsingStaleFundNavs { get; private set; }
@@ -39,6 +52,18 @@ public class KiteService
 
     public void ReloadCredentials() => _apiKey = _vault.GetApiKey() ?? "";
 
+    /// <summary>
+    /// Drops the session token here and in the vault, then reports it as an
+    /// auth failure. Single place so the in-memory copy and the stored copy can
+    /// never disagree about whether the user is signed in.
+    /// </summary>
+    private KiteAuthException ClearAccessToken(string message)
+    {
+        AccessToken = null;
+        _vault.ClearAccessToken();
+        return new KiteAuthException(message);
+    }
+
     public string LoginUrl =>
         $"https://kite.zerodha.com/connect/login?v=3&api_key={Uri.EscapeDataString(_apiKey)}";
 
@@ -46,8 +71,8 @@ public class KiteService
 
     public async Task<bool> IsAuthenticatedAsync()
     {
-        _accessToken = _vault.GetAccessToken();
-        if (string.IsNullOrEmpty(_accessToken)) return false;
+        AccessToken = _vault.GetAccessToken();
+        if (string.IsNullOrEmpty(AccessToken)) return false;
 
         try
         {
@@ -84,8 +109,8 @@ public class KiteService
         if (!res.IsSuccessStatusCode || payload?.Data?.AccessToken is null)
             throw new Exception(payload?.Message ?? "Login failed. Check your API secret.");
 
-        _accessToken = payload.Data.AccessToken;
-        _vault.SaveAccessToken(_accessToken);
+        AccessToken = payload.Data.AccessToken;
+        _vault.SaveAccessToken(payload.Data.AccessToken);
     }
 
     // -- Portfolio -------------------------------------------------
@@ -105,8 +130,11 @@ public class KiteService
 
     private async Task<PortfolioData> FetchPortfolioAsync()
     {
-        _accessToken ??= _vault.GetAccessToken();
-        if (string.IsNullOrEmpty(_accessToken))
+        if (string.IsNullOrEmpty(AccessToken))
+        {
+            AccessToken = _vault.GetAccessToken();
+        }
+        if (string.IsNullOrEmpty(AccessToken))
             throw new KiteAuthException("Not authenticated");
 
         var equity = await GetAsync<List<HoldingDto>>("/portfolio/holdings") ?? new();
@@ -139,7 +167,13 @@ public class KiteService
 
             var change = h.DayChange
                 ?? (h.ClosePrice is > 0 ? h.LastPrice - h.ClosePrice.Value : 0);
-            dayPnl += qty * change;
+
+            // Day change applies to settled shares only. T1 stock was bought
+            // today and held no position at yesterday's close, so attributing a
+            // full day's move to it inflates (or deflates) the day figure and
+            // makes it disagree with the Kite app. Holdings *value* below still
+            // counts every share -- you own them either way.
+            dayPnl += h.Quantity * change;
             equityCurrent += qty * last;
 
             all.Add(new Holding
@@ -167,7 +201,13 @@ public class KiteService
         if (funds.Count > 0)
         {
             try { liveNavs = await _amfi.GetNavsAsync(); }
-            catch { /* fall back to Kite's NAVs */ }
+            catch (Exception ex)
+            {
+                // Fall back to Kite's NAVs, but leave a trace: a persistent AMFI
+                // failure silently degrades every fund's valuation, and without
+                // this the log showed nothing at all.
+                Log.Warn($"AMFI NAV lookup failed ({ex.GetType().Name}); using Kite's settlement NAVs");
+            }
         }
 
         // If we hold funds but AMFI gave us nothing, the fund NAVs below are
@@ -267,27 +307,42 @@ public class KiteService
     {
         var req = new HttpRequestMessage(HttpMethod.Get, BaseUrl + path);
         req.Headers.Add("X-Kite-Version", "3");
-        req.Headers.Add("Authorization", $"token {_apiKey}:{_accessToken}");
+        req.Headers.Add("Authorization", $"token {_apiKey}:{AccessToken}");
 
         var res = await _http.SendAsync(req);
 
         var raw = await res.Content.ReadAsStringAsync();
         Dump(path, raw);
 
-        var payload = System.Text.Json.JsonSerializer.Deserialize<KiteResponse<T>>(raw);
+        // Tolerant parse. A proxy or gateway error returns HTML, not JSON, and
+        // letting Deserialize throw here skipped the status check below -- so a
+        // transient 502 surfaced as a JsonException that IsAuthenticatedAsync's
+        // blanket catch read as "not authenticated", logging the user out.
+        KiteResponse<T>? payload = null;
+        try
+        {
+            payload = System.Text.Json.JsonSerializer.Deserialize<KiteResponse<T>>(raw);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Leave payload null; the status check reports the real failure.
+        }
 
         if (!res.IsSuccessStatusCode)
         {
             if (payload?.ErrorType == "TokenException")
             {
-                _accessToken = null;
-                _vault.ClearAccessToken();
-                throw new KiteAuthException(payload.Message ?? "Session expired");
+                throw ClearAccessToken(payload.Message ?? "Session expired");
             }
             throw new Exception(payload?.Message ?? $"Kite request failed ({(int)res.StatusCode})");
         }
 
-        return payload is null ? default : payload.Data;
+        if (payload is null)
+        {
+            throw new Exception($"Kite returned a response that could not be read ({(int)res.StatusCode})");
+        }
+
+        return payload.Data;
     }
 
     /// <summary>
@@ -308,6 +363,20 @@ public class KiteService
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(apiKey + requestToken + apiSecret));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Releases the HttpClient, the nested AMFI client, and the refresh gate.
+    /// One instance lives for the app's lifetime today, so this is mostly a
+    /// correctness guarantee -- but multi-account creates and drops services per
+    /// account, and without this each switch would leak a socket handle.
+    /// </summary>
+    public void Dispose()
+    {
+        _http.Dispose();
+        _amfi.Dispose();
+        _refreshGate.Dispose();
+        GC.SuppressFinalize(this);
     }
 }
 

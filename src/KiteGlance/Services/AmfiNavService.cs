@@ -25,7 +25,7 @@ namespace KiteGlance.Services;
 /// once, around 11 PM IST -- so we fetch it once per app-day rather than once
 /// per portfolio refresh.
 /// </summary>
-public sealed class AmfiNavService
+public sealed class AmfiNavService : IDisposable
 {
     private const string Url = "https://www.amfiindia.com/spages/NAVAll.txt";
 
@@ -44,6 +44,13 @@ public sealed class AmfiNavService
     /// about which NAV source is in play, the same way sync-staleness is shown.
     /// </summary>
     public bool HasLiveNavs { get; private set; }
+
+    /// <summary>
+    /// When the NAV table currently in memory was published, in UTC, or null if
+    /// no table has been loaded. Paired with <see cref="HasLiveNavs"/> so the UI
+    /// can say how old the figures are rather than only that they are old.
+    /// </summary>
+    public DateTime? NavAsOf { get; private set; }
 
     public AmfiNavService()
     {
@@ -92,6 +99,7 @@ public sealed class AmfiNavService
             _cache = Parse(diskText);
             _cachedOn = diskTime;
             HasLiveNavs = true;
+            NavAsOf = diskTime;
             return _cache;
         }
 
@@ -101,6 +109,7 @@ public sealed class AmfiNavService
             _cache = Parse(text);
             _cachedOn = DateTime.UtcNow;
             HasLiveNavs = true;
+            NavAsOf = _cachedOn;
             WriteDiskCache(text);
             return _cache;
         }
@@ -114,7 +123,16 @@ public sealed class AmfiNavService
             {
                 _cache = Parse(diskText);
                 _cachedOn = diskTime;
-                HasLiveNavs = true;
+
+                // Deliberately NOT HasLiveNavs = true. This branch is only
+                // reached when the network failed AND the disk file is from an
+                // earlier IST day (the same-day case returned above). Flagging
+                // day-old NAVs as live is what made the "fund NAVs delayed"
+                // banner impossible to trigger -- the UI then presents stale
+                // prices as current, which is the one thing this app promises
+                // not to do.
+                HasLiveNavs = false;
+                NavAsOf = diskTime;
                 Log.Warn($"AMFI fetch failed ({ex.GetType().Name}); using disk cache from {diskTime:yyyy-MM-dd}");
             }
             else if (_cache is null)
@@ -172,11 +190,19 @@ public sealed class AmfiNavService
             if (line.StartsWith("Scheme Code", StringComparison.Ordinal)) continue;
 
             var parts = line.Split(';');
-            if (parts.Length < 5) continue;
+
+            // A data row has six fields: code;ISIN growth;ISIN reinvest;name;nav;date.
+            // The old guard was `< 5`, which admitted a five-field row whose
+            // index 4 is the *date*, not the NAV -- and a scheme name containing
+            // a semicolon shifts every later index, so a numeric token could
+            // land at index 4 and key a real ISIN to a garbage price.
+            // Requiring six fields and reading the NAV as the second-from-last
+            // column is correct under both conditions.
+            if (parts.Length < 6) continue;
 
             // Two ISIN columns: growth (index 1) and reinvestment (index 2).
             // Kite's MF tradingsymbol can be either, so we index both.
-            var navText = parts[4].Trim();
+            var navText = parts[^2].Trim();
             if (!decimal.TryParse(navText, System.Globalization.NumberStyles.Any,
                     System.Globalization.CultureInfo.InvariantCulture, out var nav)
                 || nav <= 0)
@@ -197,4 +223,6 @@ public sealed class AmfiNavService
         var offset = TimeSpan.FromMinutes(330);   // IST = UTC+5:30
         return (aUtc + offset).Date == (bUtc + offset).Date;
     }
+
+    public void Dispose() => _http.Dispose();
 }
