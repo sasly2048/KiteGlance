@@ -61,6 +61,25 @@ public sealed class WidgetState
     /// the backdrop survives the original being moved or deleted.</summary>
     public string? CustomBackdropPath { get; set; }
 
+    /// <summary>
+    /// Minutes between automatic refreshes during market hours. 0 disables
+    /// auto-refresh entirely, leaving manual R / tray refresh. Clamped on read,
+    /// so a hand-edited file cannot set a value that hammers the Kite API.
+    /// </summary>
+    public int RefreshIntervalMinutes { get; set; } = 5;
+
+    /// <summary>Smallest interval we will honour, to stay well inside Kite's
+    /// rate limits even if the file says otherwise.</summary>
+    public const int MinRefreshIntervalMinutes = 1;
+    public const int MaxRefreshIntervalMinutes = 60;
+
+    /// <summary>The stored interval, bounded. 0 stays 0 (disabled).</summary>
+    [JsonIgnore]
+    public int EffectiveRefreshIntervalMinutes =>
+        RefreshIntervalMinutes <= 0
+            ? 0
+            : Math.Clamp(RefreshIntervalMinutes, MinRefreshIntervalMinutes, MaxRefreshIntervalMinutes);
+
     private static readonly JsonSerializerOptions Opts = new()
     {
         WriteIndented = true,

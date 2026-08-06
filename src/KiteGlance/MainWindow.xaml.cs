@@ -109,27 +109,10 @@ public partial class MainWindow : Window
         };
         _sessionCheckTimer.Start();
 
-        // Auto-refresh portfolio data during market hours. Defaults to every
-        // 5 minutes to keep data fresh without hammering the API. Users can
-        // disable or adjust this in Settings if needed.
-        var autoRefreshInterval = GetAutoRefreshIntervalMinutes();
-        if (autoRefreshInterval > 0)
-        {
-            _autoRefreshTimer = new System.Timers.Timer(autoRefreshInterval * 60_000)
-            {
-                AutoReset = true,
-                Enabled = true
-            };
-            _autoRefreshTimer.Elapsed += async (_, _) =>
-            {
-                // Only auto-refresh during market hours and when not already showing an overlay
-                if (MarketOpen() && Overlay.Visibility != Visibility.Visible)
-                {
-                    await Dispatcher.InvokeAsync(async () => await RefreshAsync(manual: false));
-                }
-            };
-            _autoRefreshTimer.Start();
-        }
+        // Auto-refresh during market hours, at the interval the user chose in
+        // Settings. Built here and rebuilt on change, so both paths share one
+        // definition.
+        ApplyRefreshInterval();
     }
 
     // ==== Placement =====================================================
@@ -527,10 +510,19 @@ public partial class MainWindow : Window
 
     private void OpenSettings()
     {
-        var dlg = new SettingsWindow { Owner = this };
+        var dlg = new SettingsWindow(_state.RefreshIntervalMinutes) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             _kite.ReloadCredentials();
+
+            // Persist and apply the chosen cadence without a restart.
+            if (dlg.RefreshIntervalMinutes != _state.RefreshIntervalMinutes)
+            {
+                _state.RefreshIntervalMinutes = dlg.RefreshIntervalMinutes;
+                _state.Save();
+                ApplyRefreshInterval();
+            }
+
             ShowSkeleton();
             _ = RefreshAsync();
         }
@@ -1314,11 +1306,40 @@ public partial class MainWindow
     /// Reads the auto-refresh interval from WidgetState. Returns 0 to disable,
     /// or a positive integer (minutes) for the refresh cadence. Default: 5 min.
     /// </summary>
-    private int GetAutoRefreshIntervalMinutes()
+    private int GetAutoRefreshIntervalMinutes() => _state.EffectiveRefreshIntervalMinutes;
+
+    /// <summary>
+    /// Rebuilds the auto-refresh timer after the interval changes in Settings,
+    /// so a new cadence takes effect without restarting the app. An interval of
+    /// 0 disables auto-refresh and leaves only manual refresh.
+    /// </summary>
+    public void ApplyRefreshInterval()
     {
-        // For now, use a hardcoded default. This can be moved to WidgetState
-        // and exposed in SettingsWindow later if users want configurability.
-        return 5; // minutes
+        _autoRefreshTimer?.Stop();
+        _autoRefreshTimer?.Dispose();
+        _autoRefreshTimer = null;
+
+        var minutes = GetAutoRefreshIntervalMinutes();
+        if (minutes <= 0)
+        {
+            Log.Info("Auto-refresh disabled by user setting");
+            return;
+        }
+
+        _autoRefreshTimer = new System.Timers.Timer(minutes * 60_000)
+        {
+            AutoReset = true,
+            Enabled = true
+        };
+        _autoRefreshTimer.Elapsed += async (_, _) =>
+        {
+            if (MarketOpen() && Overlay.Visibility != Visibility.Visible)
+            {
+                await Dispatcher.InvokeAsync(async () => await RefreshAsync(manual: false));
+            }
+        };
+
+        Log.Info($"Auto-refresh every {minutes} minute(s)");
     }
 }
 
