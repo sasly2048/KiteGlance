@@ -5,6 +5,13 @@ using Brush = System.Windows.Media.Brush;
 using Color = System.Windows.Media.Color;
 using SolidColorBrush = System.Windows.Media.SolidColorBrush;
 
+// WinForms is referenced alongside WPF for the tray icon, and it defines its
+// own Point. Alias every ambiguous name to the WPF one, as the brushes above
+// already do, so the wrong type cannot be picked up silently.
+using Point = System.Windows.Point;
+using PointCollection = System.Windows.Media.PointCollection;
+using Visibility = System.Windows.Visibility;
+
 namespace KiteGlance.ViewModels;
 
 public class HoldingViewModel
@@ -17,6 +24,11 @@ public class HoldingViewModel
 
     private static readonly Brush Muted =
         Frozen(new SolidColorBrush(Color.FromArgb(0x4D, 0xFF, 0xFF, 0xFF)));
+
+    /// <summary>Sparkline box, in device-independent pixels. The window is a
+    /// fixed 372 wide, so this is a budget, not a preference.</summary>
+    public const double SparkWidth = 44;
+    public const double SparkHeight = 16;
 
     public string RawSymbol { get; set; } = "";
     public decimal Qty { get; set; }
@@ -54,6 +66,89 @@ public class HoldingViewModel
     public Brush PnlColor => AwaitingPrice
         ? Muted
         : (Pnl >= 0 ? Up : Down);
+
+    // -- Sparkline -------------------------------------------------------
+
+    /// <summary>
+    /// Recent prices for this holding, oldest first. Null when too few points
+    /// have been collected to draw an honest line.
+    /// </summary>
+    public IReadOnlyList<decimal>? History { get; set; }
+
+    private PointCollection? _spark;
+    private bool _sparkBuilt;
+
+    /// <summary>
+    /// The price series mapped into the sparkline box, or null when there is
+    /// nothing to draw. Built once and cached: the row template binds it and
+    /// WPF may ask more than once, and re-normalising on every read would show
+    /// up as jitter during the entrance stagger.
+    ///
+    /// Scaling is per-row, against that row's own min and max. A shared scale
+    /// across the whole list would flatten every line but the most volatile
+    /// one; the question a sparkline answers is "which way has THIS moved",
+    /// not "how does its volatility compare to the others".
+    /// </summary>
+    public PointCollection? Spark
+    {
+        get
+        {
+            if (_sparkBuilt) return _spark;
+            _sparkBuilt = true;
+
+            var series = History;
+            if (series is null || series.Count < 2) return _spark = null;
+
+            decimal lo = series[0], hi = series[0];
+            foreach (var v in series)
+            {
+                if (v < lo) lo = v;
+                if (v > hi) hi = v;
+            }
+
+            var points = new PointCollection(series.Count);
+            var span = (double)(hi - lo);
+            var stepX = SparkWidth / (series.Count - 1);
+
+            // A dead-flat series has no range to scale against. Draw it down
+            // the middle rather than dividing by zero or hiding the row's line
+            // entirely -- "it did not move" is real information.
+            var flat = span <= 0;
+
+            for (var i = 0; i < series.Count; i++)
+            {
+                var y = flat
+                    ? SparkHeight / 2
+                    : SparkHeight - (double)(series[i] - lo) / span * SparkHeight;
+
+                points.Add(new Point(i * stepX, y));
+            }
+
+            points.Freeze();
+            return _spark = points;
+        }
+    }
+
+    /// <summary>Hidden until there is a line, so a fresh install shows empty
+    /// space rather than a stub or a placeholder.</summary>
+    public Visibility SparkVisibility =>
+        Spark is null ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>
+    /// The line follows the direction of the series itself, not the row's P&L.
+    /// A holding can be up overall while the last few days ran down, and
+    /// colouring the line by total P&L would contradict its own shape.
+    /// </summary>
+    public Brush SparkColor
+    {
+        get
+        {
+            var series = History;
+            if (series is null || series.Count < 2) return Muted;
+
+            return series[^1] >= series[0] ? Up : Down;
+        }
+    }
 
     /// <summary>
     /// The row shows a cleaned-up name and rounded figures. The tooltip shows

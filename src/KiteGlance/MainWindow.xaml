@@ -359,6 +359,7 @@
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
 
                                         <Border Grid.Column="0" Width="2" CornerRadius="1"
@@ -391,7 +392,22 @@
                                             </StackPanel>
                                         </StackPanel>
 
-                                        <StackPanel Grid.Column="2" VerticalAlignment="Center"
+                                        <!-- Recent price shape. Absent, not stubbed,
+                                             until enough points exist to be honest. -->
+                                        <Polyline Grid.Column="2"
+                                                  Width="44" Height="16"
+                                                  Margin="10,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  Visibility="{Binding SparkVisibility}"
+                                                  Points="{Binding Spark}"
+                                                  Stroke="{Binding SparkColor}"
+                                                  StrokeThickness="1.25"
+                                                  Opacity="0.85"
+                                                  StrokeLineJoin="Round"
+                                                  StrokeStartLineCap="Round"
+                                                  StrokeEndLineCap="Round" />
+
+                                        <StackPanel Grid.Column="3" VerticalAlignment="Center"
                                                     Margin="12,0,0,0">
                                             <TextBlock Text="{Binding PnlDisplay}"
                                                        FontSize="12.5" FontWeight="SemiBold"

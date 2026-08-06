@@ -28,21 +28,30 @@ public class CredentialVault
     /// </summary>
     public CredentialVault(string? baseDirectory = null, string? accountId = null)
     {
-        var root = Path.Combine(
-            baseDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "KiteGlance");
-
         _isDefaultAccount = string.IsNullOrWhiteSpace(accountId);
-
-        _dir = _isDefaultAccount
-            ? root
-            : Path.Combine(root, "accounts", Sanitize(accountId!));
+        _dir = AccountDirectory(baseDirectory, accountId);
 
         Directory.CreateDirectory(_dir);
 
         _credPath = Path.Combine(_dir, "vault.bin");
         _tokenPath = Path.Combine(_dir, "token.bin");
         _keyPath = Path.Combine(_dir, "vault.key");
+    }
+
+    /// <summary>
+    /// The folder holding one account's per-account files. Shared with any
+    /// other service that stores something per account, so exactly one place
+    /// decides how an account id becomes a path.
+    /// </summary>
+    public static string AccountDirectory(string? baseDirectory, string? accountId)
+    {
+        var root = Path.Combine(
+            baseDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "KiteGlance");
+
+        return string.IsNullOrWhiteSpace(accountId)
+            ? root
+            : Path.Combine(root, "accounts", Sanitize(accountId));
     }
 
     /// <summary>

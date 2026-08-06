@@ -44,6 +44,8 @@ public partial class MainWindow : Window
     private KiteService _kite;
     private CredentialVault _vault;
     private readonly ObservableCollection<HoldingViewModel> _rows = new();
+    private PriceHistoryService _history;
+    private bool _backfilled;
     private System.Timers.Timer? _sessionCheckTimer;
     private System.Timers.Timer? _autoRefreshTimer;
 
@@ -68,6 +70,7 @@ public partial class MainWindow : Window
         var accountId = _state.ResolvedAccountId;
         _kite = new KiteService(accountId);
         _vault = new CredentialVault(accountId: accountId);
+        _history = new PriceHistoryService(accountId: accountId);
 
         HoldingsList.ItemsSource = _rows;
 
@@ -589,6 +592,8 @@ public partial class MainWindow : Window
             _portfolio = await _kite.GetPortfolioAsync();
             _syncedAt = DateTime.Now;
 
+            await UpdatePriceHistoryAsync(_portfolio);
+
             Render();
             ShowSummary();
             PaintSyncLabel();
@@ -615,6 +620,70 @@ public partial class MainWindow : Window
 
             if (_syncedAt == default) ShowSummary();
             if (manual) Flash("Couldn't reach Kite");
+        }
+    }
+
+    /// <summary>
+    /// Feeds this refresh's prices into the sparkline history, and -- once per
+    /// run, for equities only -- tries to backfill real candles from Kite so a
+    /// subscribed user does not have to wait days for a line.
+    ///
+    /// Deliberately best-effort throughout. A sparkline is decoration; nothing
+    /// here may delay or fail a refresh that has already produced good numbers.
+    /// </summary>
+    private async Task UpdatePriceHistoryAsync(PortfolioData portfolio)
+    {
+        try
+        {
+            foreach (var h in portfolio.Holdings)
+            {
+                if (h.AwaitingPrice) continue;   // a cost-basis stand-in is not a price
+                _history.Record(h.Symbol, h.LastPrice);
+            }
+
+            // Drop symbols no longer held, so the file tracks the portfolio
+            // rather than growing for the life of the install.
+            _history.Retain(portfolio.Holdings.Select(h => h.Symbol));
+
+            if (!_backfilled)
+            {
+                _backfilled = true;
+                await BackfillHistoryAsync(portfolio);
+            }
+
+            _history.Save();
+        }
+        catch (KiteAuthException) { throw; }
+        catch (Exception ex)
+        {
+            Log.Warn("Price history update failed ({Error}); sparklines may be missing",
+                ex.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// Asks Kite for real daily candles for holdings whose local series is thin.
+    ///
+    /// Runs once per app run, not per refresh: the answer barely changes
+    /// intraday, the endpoint is rate-limited, and on the overwhelmingly common
+    /// unsubscribed account every call is a 403. The first failure stops the
+    /// loop so an unsubscribed user with thirty holdings makes one wasted
+    /// request rather than thirty.
+    /// </summary>
+    private async Task BackfillHistoryAsync(PortfolioData portfolio)
+    {
+        foreach (var h in portfolio.Holdings)
+        {
+            if (h.InstrumentToken is not { } token) continue;   // funds have none
+            if (_history.IsComplete(h.Symbol)) continue;
+
+            var closes = await _kite.GetDailyClosesAsync(token, PriceHistoryService.MaxPoints);
+
+            // Null means no subscription (or the endpoint is unhappy). Either
+            // way it will be null for every other holding too.
+            if (closes is null) return;
+
+            _history.Seed(h.Symbol, closes);
         }
     }
 
@@ -830,7 +899,8 @@ public partial class MainWindow : Window
                 AvgPrice = h.AvgPrice,
                 LastPrice = h.LastPrice,
                 AwaitingPrice = h.AwaitingPrice,
-                ApiPnl = h.ApiPnl
+                ApiPnl = h.ApiPnl,
+                History = _history.Series(h.Symbol)
             });
         }
 
@@ -1372,9 +1442,15 @@ public partial class MainWindow
         _state.ActiveAccountId = accountId;
         _state.Save();
 
+        // Flush the outgoing account's points before repointing, or the switch
+        // discards whatever this session had accumulated for it.
+        _history.Save();
+
         _kite.Dispose();
         _kite = new KiteService(accountId);
         _vault = new CredentialVault(accountId: accountId);
+        _history = new PriceHistoryService(accountId: accountId);
+        _backfilled = false;
 
         Log.Info("Switched to account {AccountId}", accountId ?? "(default)");
 
@@ -1406,8 +1482,12 @@ public partial class MainWindow
         const string staging = "pending";
 
         _kite.Dispose();
+        _history.Save();
+
         _kite = new KiteService(staging);
         _vault = new CredentialVault(accountId: staging);
+        _history = new PriceHistoryService(accountId: staging);
+        _backfilled = false;
         _state.ActiveAccountId = staging;
         _state.Save();
 
@@ -1453,6 +1533,10 @@ public partial class MainWindow
             _kite.Dispose();
             _kite = new KiteService(id);
             _vault = new CredentialVault(accountId: id);
+
+            // The history file lived inside the folder just renamed, so it has
+            // moved with it; only the object needs repointing.
+            _history = new PriceHistoryService(accountId: id);
         }
         catch (Exception ex)
         {

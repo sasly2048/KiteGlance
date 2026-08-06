@@ -204,6 +204,7 @@ public class KiteService : IDisposable
                 Qty = qty,
                 AvgPrice = h.AveragePrice,
                 LastPrice = last,
+                InstrumentToken = h.InstrumentToken,
                 IsMutualFund = false,
                 AwaitingPrice = stale,
                 ApiPnl = h.Pnl
@@ -367,6 +368,67 @@ public class KiteService : IDisposable
     }
 
     /// <summary>
+    /// Daily closing prices for an instrument, oldest first, for the sparkline.
+    ///
+    /// This endpoint is part of Kite's paid Historical Data subscription. On an
+    /// account without it, Kite answers 403 -- which is a normal state, not a
+    /// fault, so this returns null rather than throwing and the caller falls
+    /// back to locally-accumulated prices.
+    ///
+    /// Candles arrive as heterogeneous arrays rather than objects:
+    ///
+    ///   ["2024-01-01T09:15:00+0530", open, high, low, close, volume]
+    ///
+    /// so they cannot be mapped to a typed class. Index 4 is the close; taking
+    /// any other slot yields a chart that looks entirely plausible and is wrong.
+    /// </summary>
+    public async Task<List<decimal>?> GetDailyClosesAsync(long instrumentToken, int days)
+    {
+        if (instrumentToken <= 0 || days <= 0) return null;
+
+        // Ask for extra calendar days: weekends and holidays return no candle,
+        // so a bare `days` window yields roughly five sessions in seven.
+        var to = DateTime.Now.Date;
+        var from = to.AddDays(-(days * 7 / 5 + 10));
+
+        var path = $"/instruments/historical/{instrumentToken}/day"
+                   + $"?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}";
+
+        try
+        {
+            var data = await GetAsync<HistoricalDataDto>(path);
+            if (data?.Candles is null) return null;
+
+            var closes = new List<decimal>(data.Candles.Count);
+
+            foreach (var candle in data.Candles)
+            {
+                if (candle.Count < 5) continue;
+                if (candle[4].ValueKind != System.Text.Json.JsonValueKind.Number) continue;
+                if (!candle[4].TryGetDecimal(out var close)) continue;
+                if (close > 0) closes.Add(close);
+            }
+
+            return closes.Count > 0 ? closes : null;
+        }
+        catch (KiteAuthException)
+        {
+            // A genuinely dead session must still surface; the caller's refresh
+            // is already handling re-authentication.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Overwhelmingly this is the 403 of an account with no historical
+            // subscription. Info, not Warn: nothing is broken and the fallback
+            // covers it.
+            Log.Info("Historical candles unavailable ({Error}); using local price history",
+                ex.GetType().Name);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Kite returns last_price = 0 for units it has not yet priced -- a fund
     /// ordered but not allotted, or a NAV that has not published today.
     ///
@@ -431,6 +493,13 @@ public class Holding
 
     public bool IsMutualFund { get; set; }
 
+    /// <summary>
+    /// Kite's instrument id, when there is one. Equity holdings carry it;
+    /// mutual funds have no tradeable instrument and so leave it null.
+    /// Used solely to request historical candles for the sparkline.
+    /// </summary>
+    public long? InstrumentToken { get; set; }
+
     /// <summary>Kite has not priced these units yet; held at cost.</summary>
     public bool AwaitingPrice { get; set; }
 
@@ -481,6 +550,13 @@ public class SessionData
 public class HoldingDto
 {
     [JsonPropertyName("tradingsymbol")] public string TradingSymbol { get; set; } = "";
+
+    /// <summary>
+    /// Kite's numeric id for the instrument. Only used to ask the historical
+    /// endpoint for candles; it is not shown anywhere.
+    /// </summary>
+    [JsonPropertyName("instrument_token")] public long? InstrumentToken { get; set; }
+
     [JsonPropertyName("quantity")] public decimal Quantity { get; set; }
     [JsonPropertyName("t1_quantity")] public decimal? T1Quantity { get; set; }
     [JsonPropertyName("average_price")] public decimal AveragePrice { get; set; }
@@ -504,6 +580,16 @@ public class MFHoldingDto
     /// local (last - avg) * qty recomputation drifts from it.
     /// </summary>
     [JsonPropertyName("pnl")] public decimal? Pnl { get; set; }
+}
+
+/// <summary>
+/// The historical endpoint's payload. Candles are positional arrays, not
+/// objects, so the element type stays JsonElement and the caller reads slot 4.
+/// </summary>
+public class HistoricalDataDto
+{
+    [JsonPropertyName("candles")]
+    public List<List<System.Text.Json.JsonElement>>? Candles { get; set; }
 }
 
 public class UserProfileDto
