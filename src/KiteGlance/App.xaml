@@ -580,6 +580,78 @@
             </Setter>
         </Style>
 
+        <!-- The holdings list. Keeps FadedList's edge fade and hairline
+             scrollbar, but as a ListBox so its own ScrollViewer sits inside
+             the control and virtualisation actually engages. Rows are not
+             selectable: clicking one copies its ticker, and a selection
+             highlight would imply state the widget does not keep. -->
+        <Style x:Key="HoldingsRow" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <ContentPresenter />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="HoldingsListStyle" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="14,10,11,14" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource HoldingsRow}" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <Grid>
+                            <Grid.OpacityMask>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Offset="0"    Color="#00000000" />
+                                    <GradientStop Offset="0.05" Color="#FF000000" />
+                                    <GradientStop Offset="0.93" Color="#FF000000" />
+                                    <GradientStop Offset="1"    Color="#00000000" />
+                                </LinearGradientBrush>
+                            </Grid.OpacityMask>
+
+                            <ScrollViewer x:Name="PART_Scroll"
+                                          Focusable="False"
+                                          CanContentScroll="True"
+                                          Padding="{TemplateBinding Padding}"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <ScrollViewer.Template>
+                                    <ControlTemplate TargetType="ScrollViewer">
+                                        <Grid>
+                                            <ScrollContentPresenter
+                                                Margin="{TemplateBinding Padding}"
+                                                CanContentScroll="{TemplateBinding CanContentScroll}" />
+
+                                            <ScrollBar x:Name="PART_VerticalScrollBar"
+                                                       Style="{StaticResource Hairline}"
+                                                       HorizontalAlignment="Right"
+                                                       Orientation="Vertical"
+                                                       Value="{TemplateBinding VerticalOffset}"
+                                                       Maximum="{TemplateBinding ScrollableHeight}"
+                                                       ViewportSize="{TemplateBinding ViewportHeight}"
+                                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
+                                        </Grid>
+                                    </ControlTemplate>
+                                </ScrollViewer.Template>
+
+                                <ItemsPresenter />
+                            </ScrollViewer>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="FadedList" TargetType="ScrollViewer">
             <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
             <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />

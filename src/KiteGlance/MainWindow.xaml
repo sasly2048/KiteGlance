@@ -333,11 +333,25 @@
                     </Canvas>
                 </Border>
 
-                <ScrollViewer Grid.Row="1" Style="{StaticResource FadedList}"
-                              Padding="14,10,11,14">
-                    <ItemsControl x:Name="HoldingsList">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
+                <!-- A ListBox, not an ItemsControl in a ScrollViewer: the old
+                     arrangement measured the items panel at infinite height,
+                     so nothing virtualised and every holding built a row even
+                     when scrolled out of view. The ListBox owns its scroll
+                     viewer (CanContentScroll), which is what lets
+                     VirtualizingStackPanel recycle containers. -->
+                <ListBox x:Name="HoldingsList" Grid.Row="1"
+                         Style="{StaticResource HoldingsListStyle}"
+                         VirtualizingPanel.IsVirtualizing="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling"
+                         VirtualizingPanel.ScrollUnit="Pixel"
+                         ScrollViewer.CanContentScroll="True">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
                                 <Border Style="{StaticResource Row}" Margin="0,0,0,1"
                                         ToolTip="{Binding Tip}">
                                     <Grid>
@@ -393,10 +407,9 @@
                                         </StackPanel>
                                     </Grid>
                                 </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
 
                 <StackPanel x:Name="EmptyState" Grid.Row="1" Visibility="Collapsed"
                             HorizontalAlignment="Center" VerticalAlignment="Center">
