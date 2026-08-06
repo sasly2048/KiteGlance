@@ -151,7 +151,7 @@ public class KiteService : IDisposable
             // normal, expected reason to have no funds. Log at Warn so it is
             // visible when diagnosing a "my funds are missing" report, without
             // treating it as an error.
-            Log.Warn($"MF holdings fetch failed ({ex.GetType().Name}); showing equity only");
+            Log.Warn("MF holdings fetch failed ({Error}); showing equity only", ex.GetType().Name);
             funds = new();
         }
 
@@ -206,7 +206,8 @@ public class KiteService : IDisposable
                 // Fall back to Kite's NAVs, but leave a trace: a persistent AMFI
                 // failure silently degrades every fund's valuation, and without
                 // this the log showed nothing at all.
-                Log.Warn($"AMFI NAV lookup failed ({ex.GetType().Name}); using Kite's settlement NAVs");
+                Log.Warn("AMFI NAV lookup failed ({Error}); using Kite's settlement NAVs",
+                    ex.GetType().Name);
             }
         }
 

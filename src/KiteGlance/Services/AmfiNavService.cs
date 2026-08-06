@@ -133,11 +133,13 @@ public sealed class AmfiNavService : IDisposable
                 // not to do.
                 HasLiveNavs = false;
                 NavAsOf = diskTime;
-                Log.Warn($"AMFI fetch failed ({ex.GetType().Name}); using disk cache from {diskTime:yyyy-MM-dd}");
+                Log.Warn("AMFI fetch failed ({Error}); using stale disk cache from {CachedOn}",
+                    ex.GetType().Name, diskTime.ToString("yyyy-MM-dd"));
             }
             else if (_cache is null)
             {
-                Log.Warn($"AMFI fetch failed ({ex.GetType().Name}); no cache, falling back to Kite NAVs");
+                Log.Warn("AMFI fetch failed ({Error}); no cache, falling back to Kite NAVs",
+                    ex.GetType().Name);
             }
 
             return _cache;

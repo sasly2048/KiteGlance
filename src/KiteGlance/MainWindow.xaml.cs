@@ -381,7 +381,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            Log.Error($"Backdrop load failed: {path}", ex);
+            Log.Error(ex, "Backdrop load failed: {Path}", path);
             return null;
         }
     }
@@ -1339,7 +1339,7 @@ public partial class MainWindow
             }
         };
 
-        Log.Info($"Auto-refresh every {minutes} minute(s)");
+        Log.Info("Auto-refresh every {Minutes} minute(s)", minutes);
     }
 }
 
