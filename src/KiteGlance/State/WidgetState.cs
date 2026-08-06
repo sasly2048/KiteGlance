@@ -62,6 +62,18 @@ public sealed class WidgetState
     public string? CustomBackdropPath { get; set; }
 
     /// <summary>
+    /// Known accounts, in the order they were added. Empty means the original
+    /// single-account layout: credentials at the root of %APPDATA%\KiteGlance
+    /// and no account switcher in the menu. Adding a second account migrates
+    /// the existing vault into the list rather than moving any files.
+    /// </summary>
+    public List<AccountRef> Accounts { get; set; } = new();
+
+    /// <summary>Id of the account currently displayed, or null for the legacy
+    /// single-account vault.</summary>
+    public string? ActiveAccountId { get; set; }
+
+    /// <summary>
     /// Minutes between automatic refreshes during market hours. 0 disables
     /// auto-refresh entirely, leaving manual R / tray refresh. Clamped on read,
     /// so a hand-edited file cannot set a value that hammers the Kite API.
@@ -163,4 +175,88 @@ public sealed class WidgetState
     }
 
     private static bool IsUsable(double v) => !double.IsNaN(v) && !double.IsInfinity(v);
+
+    // -- Accounts --------------------------------------------------------
+
+    /// <summary>True once more than one account exists, which is when the
+    /// switcher is worth showing at all.</summary>
+    [JsonIgnore]
+    public bool HasMultipleAccounts => Accounts.Count > 1;
+
+    /// <summary>
+    /// The account to read credentials for. Falls back to the legacy root
+    /// vault when the list is empty or the stored id no longer resolves --
+    /// deleting an account's folder by hand must not leave the app pointing at
+    /// nothing.
+    /// </summary>
+    [JsonIgnore]
+    public string? ResolvedAccountId
+    {
+        get
+        {
+            if (Accounts.Count == 0) return null;
+
+            foreach (var a in Accounts)
+            {
+                if (a.Id == ActiveAccountId) return a.Id;
+            }
+
+            return Accounts[0].Id;
+        }
+    }
+
+    /// <summary>
+    /// Records an account, or refreshes the display name of one already known.
+    /// Returns true when the list changed and the caller should save.
+    /// </summary>
+    public bool UpsertAccount(string id, string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return false;
+
+        foreach (var existing in Accounts)
+        {
+            if (existing.Id != id) continue;
+
+            if (!string.IsNullOrWhiteSpace(displayName) && existing.Name != displayName)
+            {
+                existing.Name = displayName;
+                return true;
+            }
+            return false;
+        }
+
+        Accounts.Add(new AccountRef { Id = id, Name = displayName ?? id });
+        return true;
+    }
+}
+
+/// <summary>
+/// The account list handed to the tray menu: a copy of the stored accounts
+/// plus whichever is active. A named type rather than a tuple so the
+/// pre-flight validator can see the method's return type.
+/// </summary>
+public sealed class AccountsView
+{
+    public AccountsView(List<AccountRef> accounts, string? activeId)
+    {
+        Accounts = accounts;
+        ActiveId = activeId;
+    }
+
+    public List<AccountRef> Accounts { get; }
+    public string? ActiveId { get; }
+}
+
+/// <summary>
+/// A Zerodha login the widget knows about. Only the id and a display name are
+/// stored here -- credentials live in that account's own encrypted vault, never
+/// in this plain-JSON file.
+/// </summary>
+public sealed class AccountRef
+{
+    /// <summary>Kite user id, e.g. "AB1234". Also the vault folder name.</summary>
+    public string Id { get; set; } = "";
+
+    /// <summary>Human-readable label for the menu; defaults to the id.</summary>
+    public string Name { get; set; } = "";
 }

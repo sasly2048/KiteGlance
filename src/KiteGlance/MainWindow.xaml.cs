@@ -38,10 +38,12 @@ public partial class MainWindow : Window
     private static readonly Color Red = Color.FromRgb(0xFF, 0x45, 0x3A);
     private static readonly CultureInfo IN = new("en-IN");
 
-    private readonly KiteService _kite = new();
-    private readonly CredentialVault _vault = new();
-    private readonly ObservableCollection<HoldingViewModel> _rows = new();
+    // Declaration order matters: _state is read to pick the account these two
+    // are opened against, so it must be initialised first.
     private readonly WidgetState _state = WidgetState.Load();
+    private KiteService _kite;
+    private CredentialVault _vault;
+    private readonly ObservableCollection<HoldingViewModel> _rows = new();
     private System.Timers.Timer? _sessionCheckTimer;
     private System.Timers.Timer? _autoRefreshTimer;
 
@@ -59,6 +61,13 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        // Opened against whichever account is active. With no accounts
+        // configured this resolves to null and reads the original root vault,
+        // so an existing install behaves exactly as before.
+        var accountId = _state.ResolvedAccountId;
+        _kite = new KiteService(accountId);
+        _vault = new CredentialVault(accountId: accountId);
 
         HoldingsList.ItemsSource = _rows;
 
@@ -440,6 +449,10 @@ public partial class MainWindow : Window
             ShowLogin();
             return;
         }
+
+        // The profile call above tells us which Kite user these credentials
+        // belong to; record it so the account can appear in the switcher.
+        RememberActiveAccount();
 
         HideOverlay();
         await RefreshAsync();
@@ -1306,6 +1319,154 @@ public partial class MainWindow
     /// Reads the auto-refresh interval from WidgetState. Returns 0 to disable,
     /// or a positive integer (minutes) for the refresh cadence. Default: 5 min.
     /// </summary>
+    // ==== Accounts ======================================================
+
+    /// <summary>
+    /// The stored accounts and which one is active, for the tray menu. Copied
+    /// out rather than handing over the live list, since the menu is built on
+    /// the WinForms side.
+    /// </summary>
+    public AccountsView AccountsSnapshot()
+    {
+        var list = new List<AccountRef>();
+        foreach (var a in _state.Accounts)
+        {
+            list.Add(new AccountRef
+            {
+                Id = a.Id,
+                Name = string.IsNullOrWhiteSpace(a.Name) ? a.Id : a.Name
+            });
+        }
+        return new AccountsView(list, _state.ResolvedAccountId);
+    }
+
+    /// <summary>
+    /// Records the signed-in account so it can appear in the switcher. Called
+    /// after a successful auth, when KiteService has the profile in hand.
+    /// </summary>
+    private void RememberActiveAccount()
+    {
+        var id = _kite.UserId;
+        if (string.IsNullOrWhiteSpace(id)) return;
+
+        var changed = _state.UpsertAccount(id, _kite.UserName);
+
+        if (_state.ActiveAccountId != id && _kite.AccountId == id)
+        {
+            _state.ActiveAccountId = id;
+            changed = true;
+        }
+
+        if (changed) _state.Save();
+    }
+
+    /// <summary>
+    /// Points the widget at a different stored account: new vault, new client,
+    /// fresh portfolio. The old client is disposed so its sockets do not leak
+    /// across switches.
+    /// </summary>
+    public async Task SwitchAccountAsync(string? accountId)
+    {
+        if (_state.ActiveAccountId == accountId) return;
+
+        _state.ActiveAccountId = accountId;
+        _state.Save();
+
+        _kite.Dispose();
+        _kite = new KiteService(accountId);
+        _vault = new CredentialVault(accountId: accountId);
+
+        Log.Info("Switched to account {AccountId}", accountId ?? "(default)");
+
+        _portfolio = null;
+        _rows.Clear();
+        ShowSkeleton();
+
+        // A different account means different credentials, so the sign-in state
+        // has to be re-established rather than assumed.
+        if (await _kite.IsAuthenticatedAsync())
+        {
+            await RefreshAsync();
+        }
+        else
+        {
+            ShowLogin("Sign in to this account to load its portfolio.");
+        }
+    }
+
+    /// <summary>
+    /// Adds an account. The vault folder is named for the Kite user id, which
+    /// is only known after signing in, so credentials are first written to a
+    /// staging folder and the directory is renamed once Kite tells us who it
+    /// belongs to. Cancelling leaves the staging folder, which the next add
+    /// reuses -- no orphan accumulates.
+    /// </summary>
+    public async Task AddAccountAsync()
+    {
+        const string staging = "pending";
+
+        _kite.Dispose();
+        _kite = new KiteService(staging);
+        _vault = new CredentialVault(accountId: staging);
+        _state.ActiveAccountId = staging;
+        _state.Save();
+
+        _portfolio = null;
+        _rows.Clear();
+        ShowSkeleton();
+
+        OpenSettings();
+
+        if (!await _kite.IsAuthenticatedAsync())
+        {
+            ShowLogin("Sign in to finish adding this account.");
+            return;
+        }
+
+        PromoteStagedAccount(staging);
+        await RefreshAsync();
+    }
+
+    /// <summary>
+    /// Renames the staging vault to the real Kite user id now that it is known,
+    /// and points the widget at it.
+    /// </summary>
+    private void PromoteStagedAccount(string staging)
+    {
+        var id = _kite.UserId;
+        if (string.IsNullOrWhiteSpace(id) || id == staging) return;
+
+        try
+        {
+            var root = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "KiteGlance", "accounts");
+
+            var from = System.IO.Path.Combine(root, staging);
+            var to = System.IO.Path.Combine(root, id);
+
+            if (System.IO.Directory.Exists(from) && !System.IO.Directory.Exists(to))
+            {
+                System.IO.Directory.Move(from, to);
+            }
+
+            _kite.Dispose();
+            _kite = new KiteService(id);
+            _vault = new CredentialVault(accountId: id);
+        }
+        catch (Exception ex)
+        {
+            // Keep the staging vault rather than losing the credentials just
+            // entered; the account still works, it is just named "pending".
+            Log.Error(ex, "Could not rename staged account to {AccountId}", id);
+            return;
+        }
+
+        _state.UpsertAccount(id, _kite.UserName);
+        _state.ActiveAccountId = id;
+        _state.Save();
+    }
+
     private int GetAutoRefreshIntervalMinutes() => _state.EffectiveRefreshIntervalMinutes;
 
     /// <summary>

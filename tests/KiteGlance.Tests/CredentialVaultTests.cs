@@ -33,6 +33,51 @@ public class CredentialVaultTests : IDisposable
     /// that the app would then send to Kite. DPAPI (Windows) has its own
     /// integrity check; AES-GCM provides it everywhere else.
     /// </summary>
+    /// <summary>
+    /// Two accounts must not read each other's credentials.
+    /// </summary>
+    [Fact]
+    public void Accounts_have_separate_vaults()
+    {
+        new CredentialVault(_testDir, "AB1234").SaveCredentials("ada-key", "ada-secret");
+        new CredentialVault(_testDir, "CD5678").SaveCredentials("grace-key", "grace-secret");
+
+        Assert.Equal("ada-key", new CredentialVault(_testDir, "AB1234").GetCredentials().ApiKey);
+        Assert.Equal("grace-key", new CredentialVault(_testDir, "CD5678").GetCredentials().ApiKey);
+    }
+
+    /// <summary>
+    /// The account id comes from an API response and becomes a directory name,
+    /// so a traversal attempt must not escape the accounts folder.
+    /// </summary>
+    [Fact]
+    public void A_hostile_account_id_cannot_escape_the_accounts_folder()
+    {
+        var vault = new CredentialVault(_testDir, "../../escaped");
+        vault.SaveCredentials("k", "s");
+
+        var accountsRoot = Path.Combine(_testDir, "KiteGlance", "accounts");
+        Assert.True(Directory.Exists(accountsRoot));
+
+        // Nothing was created outside the KiteGlance tree.
+        Assert.False(Directory.Exists(Path.Combine(_testDir, "escaped")));
+        Assert.False(File.Exists(Path.Combine(_testDir, "escaped", "vault.bin")));
+    }
+
+    /// <summary>
+    /// An existing install has credentials at the root, not under accounts/.
+    /// The default vault must keep reading them.
+    /// </summary>
+    [Fact]
+    public void The_default_vault_still_reads_the_legacy_root_location()
+    {
+        new CredentialVault(_testDir).SaveCredentials("legacy-key", "legacy-secret");
+
+        var rootVault = Path.Combine(_testDir, "KiteGlance", "vault.bin");
+        Assert.True(File.Exists(rootVault));
+        Assert.Equal("legacy-key", new CredentialVault(_testDir).GetCredentials().ApiKey);
+    }
+
     [Fact]
     public void Tampered_vault_never_yields_credentials()
     {

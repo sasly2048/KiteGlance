@@ -17,18 +17,48 @@ public class CredentialVault
     private readonly string _credPath;
     private readonly string _tokenPath;
     private readonly string _keyPath;
+    private readonly bool _isDefaultAccount;
 
-            public CredentialVault(string? baseDirectory = null)
-            {
-        _dir = Path.Combine(
-                            baseDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+    /// <summary>
+    /// Opens the vault. <paramref name="accountId"/> selects one of several
+    /// stored accounts; null or empty means the original single-account layout
+    /// at the root of %APPDATA%\KiteGlance, which is what every existing
+    /// install has, so upgrading changes nothing until a second account is
+    /// added.
+    /// </summary>
+    public CredentialVault(string? baseDirectory = null, string? accountId = null)
+    {
+        var root = Path.Combine(
+            baseDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "KiteGlance");
+
+        _isDefaultAccount = string.IsNullOrWhiteSpace(accountId);
+
+        _dir = _isDefaultAccount
+            ? root
+            : Path.Combine(root, "accounts", Sanitize(accountId!));
 
         Directory.CreateDirectory(_dir);
 
         _credPath = Path.Combine(_dir, "vault.bin");
         _tokenPath = Path.Combine(_dir, "token.bin");
         _keyPath = Path.Combine(_dir, "vault.key");
+    }
+
+    /// <summary>
+    /// Kite user ids are alphanumeric, but the id reaches us from an API
+    /// response and is about to become a directory name -- so anything that
+    /// could climb out of the accounts folder is replaced rather than trusted.
+    /// </summary>
+    private static string Sanitize(string accountId)
+    {
+        var sb = new StringBuilder(accountId.Length);
+        foreach (var c in accountId)
+        {
+            sb.Append(char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_');
+        }
+
+        return sb.Length == 0 ? "default" : sb.ToString();
     }
 
     // -- Credentials -----------------------------------------------
@@ -51,11 +81,18 @@ public class CredentialVault
         // running from source keep credentials in a local .env / user-level
         // env var instead of typing them into the Settings dialog each time --
         // see .env.example. Nothing here is ever hardcoded or committed.
-        var envKey = Environment.GetEnvironmentVariable("KITE_API_KEY");
-        var envSecret = Environment.GetEnvironmentVariable("KITE_API_SECRET");
+        // Applies to the default (single-account) vault only. With several
+        // accounts configured, one pair of environment variables cannot stand
+        // for all of them, and silently returning the same credentials for
+        // every account would be worse than ignoring them.
+        if (_isDefaultAccount)
+        {
+            var envKey = Environment.GetEnvironmentVariable("KITE_API_KEY");
+            var envSecret = Environment.GetEnvironmentVariable("KITE_API_SECRET");
 
-        if (!string.IsNullOrWhiteSpace(envKey) && !string.IsNullOrWhiteSpace(envSecret))
-            return (envKey, envSecret);
+            if (!string.IsNullOrWhiteSpace(envKey) && !string.IsNullOrWhiteSpace(envSecret))
+                return (envKey, envSecret);
+        }
 
         var json = Read(_credPath);
         if (json is null) return (null, null);

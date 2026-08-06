@@ -17,8 +17,12 @@ public class KiteService : IDisposable
     private const string BaseUrl = "https://api.kite.trade";
 
     private readonly HttpClient _http = new();
-    private readonly CredentialVault _vault = new();
+    private readonly CredentialVault _vault;
     private readonly AmfiNavService _amfi = new();
+
+    /// <summary>Which stored account this client reads credentials for; null
+    /// for the original single-account vault.</summary>
+    public string? AccountId { get; }
 
     // Hourly timer, manual refresh and boot can all fire at once. Without a
     // gate they interleave: doubled work, and two Dump() appends producing
@@ -45,8 +49,10 @@ public class KiteService : IDisposable
     /// NAVs because AMFI could not be reached. Surfaced so the UI can say so.</summary>
     public bool UsingStaleFundNavs { get; private set; }
 
-    public KiteService()
+    public KiteService(string? accountId = null)
     {
+        AccountId = accountId;
+        _vault = new CredentialVault(accountId: accountId);
         _apiKey = _vault.GetApiKey() ?? "";
     }
 
@@ -69,6 +75,15 @@ public class KiteService : IDisposable
 
     // -- Auth ------------------------------------------------------
 
+    /// <summary>
+    /// Kite user id and display name of the signed-in account, captured from
+    /// the profile call that the auth check already makes. Null until a
+    /// successful check. Multi-account uses this to label and key an account
+    /// without a second round trip.
+    /// </summary>
+    public string? UserId { get; private set; }
+    public string? UserName { get; private set; }
+
     public async Task<bool> IsAuthenticatedAsync()
     {
         AccessToken = _vault.GetAccessToken();
@@ -76,7 +91,12 @@ public class KiteService : IDisposable
 
         try
         {
-            await GetAsync<UserProfileDto>("/user/profile");
+            var profile = await GetAsync<UserProfileDto>("/user/profile");
+            if (profile is not null)
+            {
+                UserId = profile.UserId;
+                UserName = profile.UserName;
+            }
             return true;
         }
         catch

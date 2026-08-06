@@ -125,4 +125,86 @@ public class WidgetStateTests
         Assert.Null(state.Left);
         Assert.Null(state.Top);
     }
+
+    // -- Accounts --------------------------------------------------------
+
+    /// <summary>
+    /// An existing single-account install has no Accounts entries, and must
+    /// keep reading the original root vault rather than being pointed at a
+    /// per-account folder that does not exist.
+    /// </summary>
+    [Fact]
+    public void With_no_accounts_the_legacy_root_vault_is_used()
+    {
+        var state = new WidgetState();
+
+        Assert.Null(state.ResolvedAccountId);
+        Assert.False(state.HasMultipleAccounts);
+    }
+
+    [Fact]
+    public void Adding_an_account_records_it()
+    {
+        var state = new WidgetState();
+
+        Assert.True(state.UpsertAccount("AB1234", "Ada"));
+        Assert.Single(state.Accounts);
+        Assert.Equal("Ada", state.Accounts[0].Name);
+    }
+
+    [Fact]
+    public void Re_adding_the_same_account_does_not_duplicate_it()
+    {
+        var state = new WidgetState();
+        state.UpsertAccount("AB1234", "Ada");
+
+        Assert.False(state.UpsertAccount("AB1234", "Ada"));
+        Assert.Single(state.Accounts);
+    }
+
+    [Fact]
+    public void A_renamed_account_updates_in_place()
+    {
+        var state = new WidgetState();
+        state.UpsertAccount("AB1234", "Ada");
+
+        Assert.True(state.UpsertAccount("AB1234", "Ada L."));
+        Assert.Single(state.Accounts);
+        Assert.Equal("Ada L.", state.Accounts[0].Name);
+    }
+
+    [Fact]
+    public void An_empty_id_is_rejected()
+    {
+        var state = new WidgetState();
+
+        Assert.False(state.UpsertAccount("", "Nobody"));
+        Assert.Empty(state.Accounts);
+    }
+
+    [Fact]
+    public void The_active_account_resolves_when_it_exists()
+    {
+        var state = new WidgetState();
+        state.UpsertAccount("AB1234", "Ada");
+        state.UpsertAccount("CD5678", "Grace");
+        state.ActiveAccountId = "CD5678";
+
+        Assert.Equal("CD5678", state.ResolvedAccountId);
+        Assert.True(state.HasMultipleAccounts);
+    }
+
+    /// <summary>
+    /// Deleting an account folder by hand must not leave the widget pointing
+    /// at an id that no longer resolves.
+    /// </summary>
+    [Fact]
+    public void A_stale_active_id_falls_back_to_the_first_account()
+    {
+        var state = new WidgetState();
+        state.UpsertAccount("AB1234", "Ada");
+        state.ActiveAccountId = "GONE999";
+
+        Assert.Equal("AB1234", state.ResolvedAccountId);
+    }
 }
