@@ -79,8 +79,10 @@
         <Rectangle x:Name="BackdropScrim" IsHitTestVisible="False"
                    Fill="#B20C0E12" Opacity="0" />
 
-        <!-- Dither, so nothing bands. -->
-        <Rectangle Fill="{StaticResource Grain}" IsHitTestVisible="False"
+        <!-- Dither, so nothing bands. Dropped in high contrast, where any
+             texture over the surface works against the guaranteed contrast
+             the mode exists to provide. -->
+        <Rectangle x:Name="Grain" Fill="{StaticResource Grain}" IsHitTestVisible="False"
                    Panel.ZIndex="9" />
 
         <Border Height="1" VerticalAlignment="Top"
@@ -118,9 +120,16 @@
 
                             <!-- Breathing dot. A static dot labelled "live" is a
                                  lie told in markup. If the market is open, it
-                                 should have a pulse. -->
-                            <Grid Width="10" Height="10" Margin="10,1,6,0"
-                                  VerticalAlignment="Center">
+                                 should have a pulse.
+
+                                 The pulse is the only cue that the market is
+                                 open, and a pulse is not perceivable to a
+                                 screen reader. The name is rewritten in code
+                                 alongside the animation so the state is stated
+                                 rather than only shown. -->
+                            <Grid x:Name="LiveStatus" Width="10" Height="10" Margin="10,1,6,0"
+                                  VerticalAlignment="Center"
+                                  AutomationProperties.Name="Market closed">
                                 <Ellipse x:Name="LiveHalo" Width="10" Height="10"
                                          Fill="{StaticResource Blue}" Opacity="0"
                                          RenderTransformOrigin="0.5,0.5">
@@ -137,11 +146,14 @@
 
                             <TextBlock x:Name="SyncLabel" Text="" FontSize="11"
                                        Foreground="{StaticResource Label3}"
-                                       VerticalAlignment="Center" />
+                                       VerticalAlignment="Center"
+                                       AutomationProperties.Name="Last synced" />
                         </StackPanel>
 
                         <Button x:Name="MenuButton" Style="{StaticResource IconButton}"
-                                HorizontalAlignment="Right" ToolTip="Menu">
+                                HorizontalAlignment="Right" ToolTip="Menu"
+                                AutomationProperties.Name="Menu"
+                                AutomationProperties.HelpText="Settings, backdrop and pin options">
                             <Path Width="16" Height="16"
                                   Data="{StaticResource IconMore}"
                                   Fill="{Binding RelativeSource={RelativeSource
@@ -149,8 +161,15 @@
                         </Button>
                     </Grid>
 
-                    <!-- Hero: label, magnitude, rate. In that reading order. -->
-                    <Grid Margin="0,16,0,0">
+                    <!-- Hero: label, magnitude, rate. In that reading order.
+
+                         Visually the value and the percentage are one statement
+                         split across two corners. Read out as separate text
+                         they lose that, so the group carries the whole sentence
+                         and the pieces are hidden from the tree rather than
+                         announced twice. Rewritten in code on every render. -->
+                    <Grid x:Name="Hero" Margin="0,16,0,0"
+                          AutomationProperties.Name="Today's change">
                         <StackPanel HorizontalAlignment="Left">
                             <TextBlock x:Name="HeroLabel" Text="Today"
                                        FontSize="11.5" FontWeight="Medium"
@@ -203,7 +222,8 @@
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock x:Name="InvestedText" Text="" FontSize="12"
                                            Typography.NumeralAlignment="Tabular"
-                                           Foreground="{StaticResource Label3}" />
+                                           Foreground="{StaticResource Label3}"
+                                           AutomationProperties.Name="Invested" />
                                 <Path Width="9" Height="9" Margin="8,1,8,0"
                                       VerticalAlignment="Center"
                                       Data="{StaticResource IconArrow}"
@@ -216,16 +236,22 @@
                                 <TextBlock x:Name="CurrentText" Text="" FontSize="12"
                                            FontWeight="SemiBold"
                                            Typography.NumeralAlignment="Tabular"
-                                           Foreground="{StaticResource Label}" />
+                                           Foreground="{StaticResource Label}"
+                                           AutomationProperties.Name="Current value" />
                             </StackPanel>
 
                             <TextBlock x:Name="OverallText" Text=""
                                        HorizontalAlignment="Right"
                                        FontSize="12" FontWeight="Medium"
                                        Typography.NumeralAlignment="Tabular"
-                                       Foreground="{StaticResource Label3}" />
+                                       Foreground="{StaticResource Label3}"
+                                       AutomationProperties.Name="Overall profit and loss" />
                         </Grid>
 
+                        <!-- Purely a restatement of invested versus current, which
+                             are both already announced above. Bare Borders carry
+                             no automation peer, so this is silent already and
+                             needs no suppression. -->
                         <Canvas x:Name="TrackHost" Height="10">
                             <Border Height="4" Canvas.Top="3" Canvas.Left="0" Width="332"
                                     CornerRadius="2" Background="{StaticResource Track}" />
@@ -276,7 +302,11 @@
             </Grid>
 
             <!-- ============ EXPANDER ============ -->
-            <Button x:Name="ToggleButton" Grid.Row="1" Style="{StaticResource Expander}">
+            <!-- Name and HelpText are rewritten in Toggle() so the control
+                 announces what it will do next, not merely what it is. -->
+            <Button x:Name="ToggleButton" Grid.Row="1" Style="{StaticResource Expander}"
+                    AutomationProperties.Name="Show holdings"
+                    AutomationProperties.HelpText="Space or Enter to expand the holdings list">
                 <Grid Width="332">
                     <TextBlock x:Name="ToggleText" Text="Holdings" VerticalAlignment="Center" />
                     <Path x:Name="Chevron" HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -307,10 +337,18 @@
                         BorderBrush="{StaticResource Separator}"
                         BorderThickness="0,0,0,1">
                     <Canvas Height="30">
+                        <!-- These are Buttons, not a TabControl, because the
+                             underline animates independently of them. That
+                             costs the selection semantics a real tab would
+                             carry, so ItemStatus supplies it: SwitchTab writes
+                             "selected" / "not selected" as the active tab
+                             changes. -->
                         <StackPanel x:Name="TabRow" Orientation="Horizontal"
                                     Canvas.Left="0" Canvas.Top="6">
                             <Button x:Name="StocksTab" Style="{StaticResource Tab}"
-                                    Foreground="{StaticResource Label}" Margin="0,0,24,0">
+                                    Foreground="{StaticResource Label}" Margin="0,0,24,0"
+                                    AutomationProperties.Name="Stocks"
+                                    AutomationProperties.ItemStatus="selected">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="Stocks" />
                                     <TextBlock x:Name="StocksCount" Text="" Margin="6,0,0,0"
@@ -318,7 +356,9 @@
                                 </StackPanel>
                             </Button>
 
-                            <Button x:Name="FundsTab" Style="{StaticResource Tab}">
+                            <Button x:Name="FundsTab" Style="{StaticResource Tab}"
+                                    AutomationProperties.Name="Funds"
+                                    AutomationProperties.ItemStatus="not selected">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="Funds" />
                                     <TextBlock x:Name="FundsCount" Text="" Margin="6,0,0,0"
@@ -352,8 +392,15 @@
                     </ListBox.ItemsPanel>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
+                                <!-- One row is one fact, so it is announced once,
+                                     as a sentence, rather than as four unrelated
+                                     runs of text. The name lives on the
+                                     ListBoxItem's content: the item is what a
+                                     reader navigates to, and it inherits this. -->
                                 <Border Style="{StaticResource Row}" Margin="0,0,0,1"
-                                        ToolTip="{Binding Tip}">
+                                        ToolTip="{Binding Tip}"
+                                        AutomationProperties.Name="{Binding Spoken}"
+                                        AutomationProperties.HelpText="Enter to copy the ticker">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />

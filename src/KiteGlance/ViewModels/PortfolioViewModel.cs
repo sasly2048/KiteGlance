@@ -164,6 +164,36 @@ public class HoldingViewModel
             : "\nNow " + Money.Exact(LastPrice))
         + "\n\nClick to copy";
 
+    /// <summary>
+    /// The row as one spoken sentence, for screen readers.
+    ///
+    /// Deliberately not the same string as the tooltip. The tooltip is a
+    /// reference card for someone already looking at the row and wanting the
+    /// figures behind the rounding; this is the row's meaning for someone who
+    /// cannot see it at all, so it leads with what changed and by how much.
+    ///
+    /// The typographic minus is spelled back out as "down": U+2212 is either
+    /// skipped or read as "minus sign" depending on the reader, and neither is
+    /// what the glyph means here.
+    /// </summary>
+    public string Spoken
+    {
+        get
+        {
+            if (AwaitingPrice)
+                return $"{Symbol}, not priced yet, held at cost {Money.Exact(AvgPrice)}";
+
+            var direction = Pnl >= 0 ? "up" : "down";
+            var amount = Money.Rupees(Math.Abs(Pnl));
+            var pct = Math.Abs(PnlPct).ToString("0.00", IN) + " percent";
+
+            return $"{Symbol}, {direction} {amount}, {pct}, "
+                   + $"worth {Money.Rupees(Current)}";
+        }
+    }
+
+    private static readonly CultureInfo IN = new("en-IN");
+
     private static Brush Frozen(Brush b)
     {
         b.Freeze();

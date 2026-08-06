@@ -85,6 +85,7 @@ public partial class MainWindow : Window
         FundsTab.Click += (_, _) => SwitchTab("funds");
 
         HoldingsList.PreviewMouseLeftButtonUp += RowClicked;
+        HoldingsList.PreviewKeyDown += RowKeyDown;
 
         PreviewKeyDown += OnKey;
         LocationChanged += (_, _) => QueueSave();
@@ -92,6 +93,15 @@ public partial class MainWindow : Window
         Restore();
         ShowSkeleton();
         ApplyBackdrop(instant: true);
+        ApplyHighContrast();
+
+        // High contrast can be switched on mid-session (Left Alt + Left Shift +
+        // Print Screen), so it is watched rather than read once at startup.
+        SystemParameters.StaticPropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(SystemParameters.HighContrast)) return;
+            Dispatcher.Invoke(ApplyHighContrast);
+        };
 
         // The sync label ages in place: "just now" becomes "2m ago" without
         // needing a refresh to make it true. The same tick re-evaluates the
@@ -303,8 +313,64 @@ public partial class MainWindow : Window
     /// A change crossfades over ~1.2s -- dusk should arrive the way it does
     /// outside, not like a slide projector.
     /// </summary>
+    /// <summary>
+    /// High contrast is a request for legibility over decoration, so in that
+    /// mode the decoration comes off: the photographic backdrop, the grain
+    /// dither, the accent wash and the list's fade mask all sit on top of the
+    /// contrast the mode guarantees, and each one erodes it.
+    ///
+    /// What is left is the plain surface with the palette's own foregrounds --
+    /// deliberately duller than the widget is meant to look, which is the
+    /// correct trade when the user has asked the OS for exactly that.
+    /// </summary>
+    private void ApplyHighContrast()
+    {
+        var on = SystemParameters.HighContrast;
+
+        Grain.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+
+        if (on)
+        {
+            BackdropFront.Fill = null;
+            BackdropBack.Fill = null;
+            BackdropScrim.Opacity = 0;
+            Wash.Opacity = 0;
+
+            // Force the next ApplyBackdrop to redraw rather than short-circuit
+            // on an unchanged path, for when the user switches back.
+            _backdropCurrent = null;
+        }
+        else
+        {
+            ApplyBackdrop(instant: true);
+        }
+
+        // The mask fades the top and bottom rows to transparent. That is a
+        // legibility cost paid for a soft edge, which is the wrong trade here.
+        HoldingsList.SetValue(HighContrastProperty, on);
+    }
+
+    /// <summary>
+    /// Read by the holdings list template to drop its edge fade. An attached
+    /// flag rather than a second style, so the one template stays the single
+    /// description of the list.
+    /// </summary>
+    public static readonly DependencyProperty HighContrastProperty =
+        DependencyProperty.RegisterAttached(
+            "HighContrast", typeof(bool), typeof(MainWindow),
+            new PropertyMetadata(false));
+
+    public static bool GetHighContrast(DependencyObject o) =>
+        (bool)o.GetValue(HighContrastProperty);
+
+    public static void SetHighContrast(DependencyObject o, bool value) =>
+        o.SetValue(HighContrastProperty, value);
+
     private void ApplyBackdrop(bool instant = false)
     {
+        // A backdrop image would sit under the text and defeat the point.
+        if (SystemParameters.HighContrast) return;
+
         string path;
         var custom = false;
 
@@ -612,6 +678,10 @@ public partial class MainWindow : Window
             StopBreathing();
             LiveDot.Fill = (Brush)FindResource("Amber");
 
+            // Amber is the whole message here, and colour alone is not a message.
+            System.Windows.Automation.AutomationProperties.SetName(
+                LiveStatus, "Cannot reach Kite");
+
             // Stale, not blank. The last-known numbers are still the truest
             // thing on screen; say when they were true and leave them up.
             SyncLabel.Text = _syncedAt == default
@@ -775,6 +845,10 @@ public partial class MainWindow : Window
 
         _breath = sb;
         sb.Begin();
+
+        // The pulse IS the "market is open" signal, and a pulse cannot be heard.
+        // Say it, in the one place that already knows.
+        System.Windows.Automation.AutomationProperties.SetName(LiveStatus, "Market open");
     }
 
     private void StopBreathing()
@@ -786,6 +860,8 @@ public partial class MainWindow : Window
 
         LiveHalo.Opacity = 0;
         LiveDot.Opacity = 1;
+
+        System.Windows.Automation.AutomationProperties.SetName(LiveStatus, "Market closed");
     }
 
     public static bool MarketOpen()
@@ -886,6 +962,15 @@ public partial class MainWindow : Window
         }
 
         if (animate) PulseHero();
+
+        // The two halves of the hero are one sentence, so they are announced as
+        // one. Numeral.Set animates the visible digits over ~700ms; reading the
+        // mid-count value would be wrong, so this states the settled figure.
+        System.Windows.Automation.AutomationProperties.SetName(Hero,
+            (isFunds ? "Funds today, " : "Today, ")
+            + (heroVal >= 0 ? "up " : "down ")
+            + Money.Rupees(Math.Abs(heroVal))
+            + ", " + Math.Abs(heroPct).ToString("0.00", IN) + " percent");
 
         DrawDelta(invested, current);
 
@@ -1045,6 +1130,15 @@ public partial class MainWindow : Window
 
         ToggleText.Text = _open ? "Hide" : "Holdings";
 
+        // The visible label is the state; the announced one is the action, which
+        // is what a button should promise.
+        System.Windows.Automation.AutomationProperties.SetName(
+            ToggleButton, _open ? "Hide holdings" : "Show holdings");
+        System.Windows.Automation.AutomationProperties.SetHelpText(
+            ToggleButton,
+            _open ? "Space or Enter to collapse the holdings list"
+                  : "Space or Enter to expand the holdings list");
+
         if (_open)
         {
             Pane.Visibility = Visibility.Visible;
@@ -1173,6 +1267,14 @@ public partial class MainWindow : Window
         StocksTab.Foreground = tab == "stocks" ? on : off;
         FundsTab.Foreground = tab == "funds" ? on : off;
 
+        // Which tab is showing is carried entirely by colour and the underline
+        // position. Neither survives to a screen reader, and these are Buttons
+        // rather than a TabControl, so there is no selection state to inherit.
+        System.Windows.Automation.AutomationProperties.SetItemStatus(
+            StocksTab, tab == "stocks" ? "selected" : "not selected");
+        System.Windows.Automation.AutomationProperties.SetItemStatus(
+            FundsTab, tab == "funds" ? "selected" : "not selected");
+
         var target = tab == "stocks" ? StocksTab : FundsTab;
         target.UpdateLayout();
         var x = target.TranslatePoint(new Point(0, 0), TabRow).X;
@@ -1213,8 +1315,35 @@ public partial class MainWindow : Window
         if (e.OriginalSource is not DependencyObject src) return;
 
         var row = FindRow(src);
+        if (row?.DataContext is HoldingViewModel vm) Copy(vm);
+    }
+
+    /// <summary>
+    /// Enter copies the focused row, the keyboard counterpart of clicking it.
+    /// Rows are ListBoxItems, so arrow keys already move between them; without
+    /// this, reaching a row by keyboard led nowhere.
+    ///
+    /// Handled here rather than in OnKey because this must only fire when a row
+    /// actually holds focus, and the window-level handler cannot see that
+    /// without reaching back into the list.
+    /// </summary>
+    private void RowKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space)) return;
+        if (e.OriginalSource is not DependencyObject src) return;
+
+        var row = FindRow(src);
         if (row?.DataContext is not HoldingViewModel vm) return;
 
+        Copy(vm);
+
+        // Stops OnKey seeing the same press and toggling the pane shut on top
+        // of the copy.
+        e.Handled = true;
+    }
+
+    private void Copy(HoldingViewModel vm)
+    {
         try
         {
             System.Windows.Clipboard.SetText(vm.RawSymbol);
@@ -1238,6 +1367,11 @@ public partial class MainWindow : Window
 
     // ==== Keyboard ======================================================
 
+    /// <summary>
+    /// Window-level shortcuts. These fire wherever focus happens to be, which
+    /// is what makes them shortcuts -- and is also why each one has to check
+    /// that it is not stealing a key its focused control needs.
+    /// </summary>
     private async void OnKey(object sender, KeyEventArgs e)
     {
         switch (e.Key)
@@ -1247,22 +1381,44 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
+            // Space and Enter are how a focused button is pressed. Swallowing
+            // them here meant activating the menu button ALSO collapsed the
+            // holdings pane -- one keystroke, two unrelated effects.
             case Key.Space:
-            case Key.Enter:
+            case Key.Enter when !FocusIsOnAControl():
                 Toggle();
                 e.Handled = true;
                 break;
 
-            case Key.R:
+            case Key.R when !FocusIsOnAControl():
                 await RefreshAsync(manual: true);
                 e.Handled = true;
                 break;
 
-            case Key.Tab:
+            // Tab was unconditionally consumed to flip between Stocks and
+            // Funds, which killed focus traversal outright and made the focus
+            // rings unreachable by the only input that can show them. The tab
+            // switch keeps Tab only while focus sits on the tab row itself,
+            // where "next tab" is the obvious reading; everywhere else Tab
+            // moves focus, as it must.
+            case Key.Tab when FocusIsOnTabRow():
                 SwitchTab(_state.Tab == "stocks" ? "funds" : "stocks");
                 e.Handled = true;
                 break;
         }
+    }
+
+    /// <summary>
+    /// True when a focusable control owns the keyboard, and so owns keys like
+    /// Space and Enter. The window itself holding focus is not a control.
+    /// </summary>
+    private static bool FocusIsOnAControl() =>
+        System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.Control;
+
+    private bool FocusIsOnTabRow()
+    {
+        var focused = System.Windows.Input.Keyboard.FocusedElement;
+        return focused == StocksTab || focused == FundsTab;
     }
 
     // ==== Menu ==========================================================
