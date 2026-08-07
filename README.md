@@ -56,13 +56,17 @@ It was built to feel like a first-party part of Windows rather than a browser ta
 - **Live portfolio P&L** — overall and per-holding, split into Stocks and Funds tabs.
 - **Accurate mutual-fund NAVs** — Kite's holdings endpoint returns a stale settlement NAV for funds; Kite Glance overrides it with the official live NAV from [AMFI](https://www.amfiindia.com), so the numbers match what Coin shows.
 - **Pin to desktop** — bottom-most z-order enforcement keeps the widget beneath every application while remaining in DWM's normal composition path for full hardware acceleration. The widget automatically restores itself when Show Desktop (Win+D, taskbar button, or touchpad gestures) issues a minimize command, ensuring desktop-pinned widgets never disappear.
-- **Backgrounds** — eight pre-rendered mesh-gradient backdrops spanning the full day (sunrise, morning, late morning, noon, afternoon, sunset, evening, and midnight). They automatically follow the time of day, can rotate through the full cycle, or stay fixed on a chosen backdrop. A custom image is also supported, and all transitions crossfade smoothly.
+- **Backgrounds** — eight pre-rendered mesh-gradient backdrops spanning the full day (dawn, sunrise, day, noon, dusk, evening, night, and midnight). They automatically follow the time of day, can rotate through the full cycle, or stay fixed on a chosen backdrop. A custom image is also supported, and all transitions crossfade smoothly.
 - **Native material** — DWM corners, dark frame, and shadow via `DwmSetWindowAttribute`.
 - **Considered motion** — a spring easing system for layout, a separate quartic ease for numbers (money never overshoots), a skeleton loading state, and a "live" indicator that only pulses while the market is open.
 - **Honest about staleness** — if a sync fails or live NAVs are unavailable, the widget says so rather than showing numbers that quietly disagree.
 - **Secure by construction** — credentials encrypted at rest with Windows DPAPI (per-user scope, app-specific entropy); OAuth captured on a loopback socket with no admin rights.
-- **Keyboard-friendly** — expand/collapse, refresh, and tab-switch all have shortcuts; focus rings appear for keyboard users.
-- **Persistent** — remembers position, expanded/collapsed state, active tab, pin mode, and backdrop choice.
+- **Sparklines** — each holding shows where its price has been. With a Kite historical-data subscription the line is drawn from real daily candles; without one it fills in from prices seen on each refresh, so it works on any account and covers mutual funds, which the historical API does not.
+- **Multiple accounts** — each Zerodha login gets its own encrypted vault and its own price history; switch between them from the tray menu.
+- **Light and dark** — follows the Windows app theme by default, or pin it to either from Settings. Switching repaints live, without a restart.
+- **Keyboard-friendly** — expand/collapse, refresh, and tab-switch all have shortcuts; arrow keys move between holdings and Enter copies one; focus rings appear for keyboard users.
+- **Screen-reader support** — the hero figure, each holding row, and the market-open indicator are all announced as sentences rather than loose numbers. High-contrast mode drops the decorative layers that would otherwise fight it.
+- **Persistent** — remembers position, expanded/collapsed state, active tab, pin mode, backdrop, theme, refresh cadence, and which account you were looking at.
 
 ## Technology Stack
 
@@ -72,7 +76,7 @@ It was built to feel like a first-party part of Windows rather than a browser ta
 | Language             | C# 12                                                                                                                                         |
 | Rendering / material | DWM interop (`DwmSetWindowAttribute`), pre-rendered mesh-gradient PNG backdrop                                                                |
 | Tray + desktop glue  | Win32 / WinForms `NotifyIcon`; bottom-most z-order via a `WM_WINDOWPOSCHANGING` hook (legacy WorkerW reparenting available behind an env var) |
-| Credential storage   | Windows DPAPI (`System.Security.Cryptography.ProtectedData`)                                                                                  |
+| Credential storage   | Windows DPAPI (`System.Security.Cryptography.ProtectedData`); AES-GCM on non-Windows                                                          |
 | Market data          | Kite Connect v3 REST API, AMFI NAVAll.txt                                                                                                     |
 | Auth                 | Kite Connect OAuth via loopback `TcpListener`                                                                                                 |
 | Packaging            | `dotnet publish` single-file self-contained; Inno Setup installer                                                                             |
@@ -198,11 +202,13 @@ If both `KITE_API_KEY` and `KITE_API_SECRET` are set, they take priority over th
 Launch the widget; it lives on your desktop and in the system tray.
 
 - **Click the header** or press **Space / Enter** to expand the holdings list.
-- **Tab** switches between Stocks and Funds.
+- **Tab** moves focus. With focus on the Stocks or Funds tab it switches between them; everywhere else it traverses normally, which is what makes the focus rings reachable.
 - **R** refreshes now (throttled to once a minute).
 - **Esc** collapses the list.
-- **Click a holding row** to copy its ticker; hover for exact quantity and average price.
-- **Right-click the tray icon** (or the widget's menu button) to switch pin modes, choose a background, toggle autostart, refresh, or quit.
+- **Click a holding row** to copy its ticker; hover for exact quantity and average price. By keyboard, arrow keys move between rows and **Enter** copies.
+- **Right-click the tray icon** to switch pin modes, switch or add an account, toggle autostart, refresh, or quit.
+- **The widget's menu button** covers pin modes, background choice, settings, refresh, hide, and quit. Background selection lives here rather than in the tray menu; account switching is the reverse.
+- **Settings** holds your API credentials, the auto-refresh cadence (every 1–60 minutes, or off for manual-only), and the appearance mode. Refresh only runs while the market is open, so a short interval costs nothing overnight. Both take effect immediately — neither needs a restart.
 
 The widget refreshes automatically during market hours (Mon–Fri, 09:15–15:30 IST).
 
@@ -228,22 +234,25 @@ Switching backgrounds crossfades rather than cutting.
 ```
 src/KiteGlance/
 ├── KiteGlance.csproj           Project file: net8.0-windows, WPF + WinForms
-├── App.xaml(.cs)              Design system, palette, resources; single-instance
+├── App.xaml(.cs)              Design system, styles, resources; single-instance
 │                              guard and global crash logging
 ├── MainWindow.xaml(.cs)       The widget: layout, motion, backdrop, state orchestration
-├── SettingsWindow.xaml(.cs)   Credential entry
-├── WidgetManager.cs           Tray icon, pin-mode menu, autostart
-├── TrayTheme.cs               Owner-drawn dark tray menu
+├── SettingsWindow.xaml(.cs)   Credential entry, refresh cadence, appearance
+├── WidgetManager.cs           Tray icon, pin-mode menu, accounts, autostart
+├── TrayTheme.cs               Owner-drawn tray menu (light and dark)
+├── Themes/
+│   ├── Dark.xaml              Dark palette
+│   └── Light.xaml             Light palette (same keys, swapped at runtime)
 ├── Assets/
 │   ├── app.ico                 Application + tray icon
+│   ├── backdrop-dawn.png
 │   ├── backdrop-sunrise.png
-│   ├── backdrop-morning.png
-│   ├── backdrop-late-morning.png
+│   ├── backdrop-day.png
 │   ├── backdrop-noon.png
-│   ├── backdrop-afternoon.png
-│   ├── backdrop-sunset.png
+│   ├── backdrop-dusk.png
 │   ├── backdrop-evening.png
-│   ├── backdrop-midnight.png     
+│   ├── backdrop-night.png
+│   ├── backdrop-midnight.png
 │   └── grain.png               Dither/grain overlay tile
 ├── Motion/
 │   ├── SpringEase.cs          Damped-harmonic-oscillator easing for layout
@@ -256,16 +265,26 @@ src/KiteGlance/
 │   ├── PnlMath.cs             Pure P&L arithmetic (unit-tested in isolation)
 │   ├── BackdropService.cs     Pure backdrop-selection logic (time-of-day / rotation)
 │   ├── AmfiNavService.cs      Live mutual-fund NAVs from AMFI, cached to disk daily
-│   ├── CredentialVault.cs     DPAPI-encrypted credential + token storage
+│   ├── PriceHistoryService.cs Rolling per-symbol price series behind the sparklines
+│   ├── CredentialVault.cs     Encrypted credential + token storage, per account
 │   ├── LoginServer.cs         Loopback OAuth redirect capture (port 5173)
-│   └── Log.cs                 Minimal dependency-free rotating file logger
-├── State/WidgetState.cs       Persisted position / tab / pin mode / backdrop (JSON)
+│   ├── Theme.cs               Runtime palette swap (System / Dark / Light)
+│   └── Log.cs                 Dependency-free structured logger (text + JSON lines)
+├── State/WidgetState.cs       Persisted position / tab / pin / backdrop / theme /
+│                              accounts / refresh interval (JSON)
 └── ViewModels/PortfolioViewModel.cs
 
-tests/KiteGlance.Tests/
-├── KiteGlance.Tests.csproj    xUnit project (plain net8.0, no WPF)
+tests/KiteGlance.Tests/         108 tests, plain net8.0, no WPF
+├── KiteGlance.Tests.csproj    xUnit project; links the files under test
 ├── PnlMathTests.cs            P&L regression tests vs. real Coin figures
-└── BackdropServiceTests.cs    Time-of-day / rotation boundary tests
+├── BackdropServiceTests.cs    Time-of-day / rotation boundary tests
+├── KiteServiceTests.cs        Portfolio assembly, day-change, stale pricing
+├── AmfiNavServiceTests.cs     NAV parsing, semicolon-in-name rows, staleness
+├── CredentialVaultTests.cs    AES-GCM round-trip, tamper detection, accounts
+├── PriceHistoryServiceTests.cs Series cap, eviction, corrupt-file recovery
+├── WidgetStateTests.cs        Atomic save, off-screen clamping, account model
+├── ThemeTests.cs              Dark and Light define identical keys
+└── LogTests.cs                Message templates, property capture, redaction
 
 scripts/
 ├── build.ps1                  Single-file self-contained publish
@@ -280,7 +299,7 @@ scripts/
 
 **Data flow:** `KiteService` fetches `/portfolio/holdings` and `/mf/holdings`, overlays live NAVs from `AmfiNavService`, and produces a `PortfolioData` the window renders. All P&L flows through `PnlMath` — the single, unit-tested implementation — so a zero from the API is never treated as a real zero, and current value can never contradict P&L.
 
-**Local files** (all under `%APPDATA%\KiteGlance\`): `vault.bin` (DPAPI-encrypted credentials), `state.json` (window position, active tab, pin mode, backdrop choice — plain JSON), `amfi-nav.txt` (cached daily NAVs), `custom-backdrop.*` (a user-chosen background image, if set), `logs/kiteglance.log` (rotating log), and `api-dump.json` (only when `KITEGLANCE_DEBUG=1`, auto-deleted otherwise).
+**Local files** (all under `%APPDATA%\KiteGlance\`): `vault.bin` (encrypted credentials), `token.bin` (encrypted access token), `state.json` (window position, active tab, pin mode, backdrop, theme, refresh interval, known accounts — plain JSON, no secrets), `history.json` (recent prices per holding, for the sparklines), `amfi-nav.txt` (cached daily NAVs), `custom-backdrop.*` (a user-chosen background image, if set), `logs/kiteglance.log` and `logs/kiteglance.jsonl` (rotating logs), and `api-dump.json` (only when `KITEGLANCE_DEBUG=1`, auto-deleted otherwise). With more than one account configured, the per-account files live under `accounts\<user-id>\`.
 
 ## Continuous Integration
 
@@ -300,29 +319,33 @@ git push origin v1.0.0
 
 ## Roadmap
 
-### Completed 
+### Completed
 - [x] ~~Auto-refresh portfolio data~~ (Implemented)
-- [x] ~~Configurable refresh interval~~ (Implemented via settings)
+- [x] ~~Configurable refresh interval~~ (Settings → Auto-refresh: 1–60 minutes, or off)
 - [x] ~~Session expiry handling~~ (Auto-detection every 1 hour)
-- [x] ~~Unit test coverage expansion~~ (31+ new tests added)
+- [x] ~~Unit test coverage expansion~~ (108 tests across 9 files)
 - [x] ~~Documentation improvements~~ (Security model, troubleshooting guides)
 - [x] ~~CI/CD enhancements~~ (Code coverage, cross-platform fixes)
+- [x] ~~Multi-account support~~ (Per-account vaults; switch from the tray menu)
+- [x] ~~Sparkline charts for holdings~~ (Kite historical API when subscribed, locally
+      accumulated price history otherwise, so it works without the paid add-on)
+- [x] ~~Advanced accessibility features~~ (Screen-reader names throughout, text
+      equivalents for the market-open pulse, keyboard-reachable rows, high-contrast mode)
+- [x] ~~Light theme variant~~ (Settings → Appearance: Match Windows / Dark / Light)
+- [x] ~~Lazy loading for large portfolios~~ (Virtualized holdings list)
+- [x] ~~Structured logging~~ (Message templates and JSON-lines output, without
+      taking on Serilog — the no-dependencies rule stands)
 
-### In Progress 
-- [ ] Multi-account support
-- [ ] Sparkline charts for holdings
-- [ ] Advanced accessibility features
-
-### Future Considerations 
-- [ ] Light theme variant (low priority due to adaptive background)
-- [ ] Lazy loading for large portfolios
-- [ ] Structured logging with Serilog
+### Future Considerations
+- [ ] Light-mode backdrop art (light mode currently tints the dark-tuned images
+      rather than shipping a second set)
+- [ ] Intraday sparkline resolution for users with a historical-data subscription
 
 Suggestions and contributions are welcome — see [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Security Considerations
 
-- **Credentials never leave your machine.** API key, secret, and access token are encrypted at rest with Windows DPAPI (per-user scope + app-specific entropy) under `%APPDATA%\KiteGlance`.
+- **Credentials never leave your machine.** API key, secret, and access token are encrypted at rest with Windows DPAPI (per-user scope + app-specific entropy) under `%APPDATA%\KiteGlance`. On non-Windows builds the fallback is AES-GCM, which is authenticated: tampered ciphertext is rejected rather than decrypted into garbage that would then be sent to Kite. Each account gets its own vault under `accounts\<user-id>\`.
 - **No backend, no telemetry.** The app talks only to `api.kite.trade` and `amfiindia.com`. There is no analytics.
 - **OAuth is loopback-only.** The redirect is captured by a `TcpListener` bound to `127.0.0.1:5173`; no admin rights or URL reservations are required, and the listener closes immediately after capture.
 - **Nothing sensitive is committed.** No credentials appear anywhere in this repository; `.env` and `*.bin` are git-ignored.
