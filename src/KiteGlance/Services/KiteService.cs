@@ -70,8 +70,23 @@ public class KiteService : IDisposable
         return new KiteAuthException(message);
     }
 
+    /// <summary>True once an API key is available to build a login URL with.</summary>
+    public bool HasApiKey => !string.IsNullOrWhiteSpace(_apiKey);
+
+    /// <summary>
+    /// Kite's hosted login page for this app.
+    ///
+    /// Throws rather than returning a URL with an empty api_key. Kite answers
+    /// that with an unexplained error page in the user's browser, which reads
+    /// as "login is broken" and gives no hint that the real problem is a
+    /// credential the app could not read.
+    /// </summary>
     public string LoginUrl =>
-        $"https://kite.zerodha.com/connect/login?v=3&api_key={Uri.EscapeDataString(_apiKey)}";
+        HasApiKey
+            ? $"https://kite.zerodha.com/connect/login?v=3&api_key={Uri.EscapeDataString(_apiKey)}"
+            : throw new InvalidOperationException(
+                "No API key stored for this account. Add your Kite Connect "
+                + "API key and secret in Settings, then sign in.");
 
     // -- Auth ------------------------------------------------------
 

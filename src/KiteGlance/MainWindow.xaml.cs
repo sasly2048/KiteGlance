@@ -624,6 +624,18 @@ public partial class MainWindow : Window
 
     private async Task SignInAsync()
     {
+        // Sending the browser to Kite without an API key produces an error page
+        // that blames nothing in particular. Say what is actually missing, and
+        // offer the screen that fixes it.
+        if (!_kite.HasApiKey)
+        {
+            ShowOverlay("Connect Kite",
+                "No API key is stored for this account. Add your Kite Connect "
+                + "API key and secret to sign in.",
+                "Open settings", OpenSettings);
+            return;
+        }
+
         OverlayButton.IsEnabled = false;
         OverlayButton.Content = "Waiting for Kite...";
 
@@ -674,7 +686,12 @@ public partial class MainWindow : Window
             }
 
             ShowSkeleton();
-            _ = RefreshAsync();
+
+            // Back through the boot gate rather than straight to a refresh.
+            // Credentials may have just been entered for the first time, in
+            // which case there is no session yet and a refresh would fail; boot
+            // decides between "set up", "sign in" and "load the portfolio".
+            _ = BootAsync();
         }
     }
 
@@ -1637,6 +1654,16 @@ public partial class MainWindow
     /// <summary>
     /// Records the signed-in account so it can appear in the switcher. Called
     /// after a successful auth, when KiteService has the profile in hand.
+    /// </summary>
+    /// <summary>
+    /// Records who the current credentials belong to, so the account can be
+    /// named in the switcher.
+    ///
+    /// This is labelling only. On a single-account install the credentials stay
+    /// in the root vault and are still read from there -- ResolvedAccountId
+    /// only points at accounts\&lt;id&gt;\ once that folder actually holds a
+    /// vault. Getting that wrong is what broke sign-in: merely learning the
+    /// user id was enough to send the app looking in an empty directory.
     /// </summary>
     private void RememberActiveAccount()
     {
