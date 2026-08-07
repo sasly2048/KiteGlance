@@ -16,14 +16,24 @@ namespace KiteGlance.ViewModels;
 
 public class HoldingViewModel
 {
-    private static readonly Brush Up =
+    // Pulled from the palette so a theme switch reaches the rows. Frozen
+    // fallbacks cover the designer and any path with no Application, and are
+    // the dark values the widget shipped with.
+    private static Brush Up => Palette("Green", FallbackUp);
+    private static Brush Down => Palette("Red", FallbackDown);
+    private static Brush Muted => Palette("Label3", FallbackMuted);
+
+    private static readonly Brush FallbackUp =
         Frozen(new SolidColorBrush(Color.FromRgb(0x32, 0xD7, 0x4B)));   // systemGreen
 
-    private static readonly Brush Down =
+    private static readonly Brush FallbackDown =
         Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0x45, 0x3A)));   // systemRed
 
-    private static readonly Brush Muted =
+    private static readonly Brush FallbackMuted =
         Frozen(new SolidColorBrush(Color.FromArgb(0x4D, 0xFF, 0xFF, 0xFF)));
+
+    private static Brush Palette(string key, Brush fallback) =>
+        System.Windows.Application.Current?.TryFindResource(key) as Brush ?? fallback;
 
     /// <summary>Sparkline box, in device-independent pixels. The window is a
     /// fixed 372 wide, so this is a budget, not a preference.</summary>

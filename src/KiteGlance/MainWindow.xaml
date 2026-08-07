@@ -60,7 +60,7 @@
         DWM supplies the corner radius and the shadow.
         This Grid lays the backdrop, then the grain so nothing bands.
     -->
-    <Grid Background="{StaticResource Surface}" ClipToBounds="True">
+    <Grid Background="{DynamicResource Surface}" ClipToBounds="True">
 
         <!--
             Two backdrop layers, so a change of image is a crossfade rather
@@ -79,14 +79,21 @@
         <Rectangle x:Name="BackdropScrim" IsHitTestVisible="False"
                    Fill="#B20C0E12" Opacity="0" />
 
+        <!-- Lightens the backdrop art under a light theme. The eight images are
+             dark-tuned raster art; repainting them is a commission, not a code
+             change, so a near-opaque tint goes over whichever one is showing.
+             Fully transparent in the dark theme, where the art needs no help. -->
+        <Rectangle x:Name="BackdropTint" IsHitTestVisible="False"
+                   Fill="{DynamicResource BackdropTint}" />
+
         <!-- Dither, so nothing bands. Dropped in high contrast, where any
              texture over the surface works against the guaranteed contrast
              the mode exists to provide. -->
-        <Rectangle x:Name="Grain" Fill="{StaticResource Grain}" IsHitTestVisible="False"
+        <Rectangle x:Name="Grain" Fill="{DynamicResource Grain}" IsHitTestVisible="False"
                    Panel.ZIndex="9" />
 
         <Border Height="1" VerticalAlignment="Top"
-                Background="{StaticResource TopSheen}"
+                Background="{DynamicResource TopSheen}"
                 IsHitTestVisible="False" Panel.ZIndex="10" />
 
         <!-- Accent wash. The only colour at scale, keyed to P&L. -->
@@ -116,7 +123,7 @@
                     <Grid x:Name="DragBar" Background="Transparent" Height="28">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Text="Portfolio" FontSize="12" FontWeight="SemiBold"
-                                       Foreground="{StaticResource Label2}" />
+                                       Foreground="{DynamicResource Label2}" />
 
                             <!-- Breathing dot. A static dot labelled "live" is a
                                  lie told in markup. If the market is open, it
@@ -131,7 +138,7 @@
                                   VerticalAlignment="Center"
                                   AutomationProperties.Name="Market closed">
                                 <Ellipse x:Name="LiveHalo" Width="10" Height="10"
-                                         Fill="{StaticResource Blue}" Opacity="0"
+                                         Fill="{DynamicResource Blue}" Opacity="0"
                                          RenderTransformOrigin="0.5,0.5">
                                     <Ellipse.RenderTransform>
                                         <ScaleTransform x:Name="HaloScale"
@@ -139,13 +146,13 @@
                                     </Ellipse.RenderTransform>
                                 </Ellipse>
                                 <Ellipse x:Name="LiveDot" Width="5" Height="5"
-                                         Fill="{StaticResource Blue}"
+                                         Fill="{DynamicResource Blue}"
                                          HorizontalAlignment="Center"
                                          VerticalAlignment="Center" />
                             </Grid>
 
                             <TextBlock x:Name="SyncLabel" Text="" FontSize="11"
-                                       Foreground="{StaticResource Label3}"
+                                       Foreground="{DynamicResource Label3}"
                                        VerticalAlignment="Center"
                                        AutomationProperties.Name="Last synced" />
                         </StackPanel>
@@ -173,13 +180,13 @@
                         <StackPanel HorizontalAlignment="Left">
                             <TextBlock x:Name="HeroLabel" Text="Today"
                                        FontSize="11.5" FontWeight="Medium"
-                                       Foreground="{StaticResource Label3}"
+                                       Foreground="{DynamicResource Label3}"
                                        Margin="1,0,0,4" />
 
                             <TextBlock x:Name="HeroValue" Text=""
                                        FontFamily="Segoe UI Variable Display, Segoe UI"
                                        FontSize="40" FontWeight="SemiBold"
-                                       Foreground="{StaticResource Label}"
+                                       Foreground="{DynamicResource Label}"
                                        Typography.NumeralAlignment="Tabular"
                                        RenderTransformOrigin="0,0.5">
                                 <TextBlock.RenderTransform>
@@ -191,13 +198,13 @@
                         <Border x:Name="PctChip"
                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                 CornerRadius="7" Padding="8,4" Margin="0,0,1,8"
-                                Background="{StaticResource Fill}">
+                                Background="{DynamicResource Fill}">
                             <StackPanel Orientation="Horizontal">
                                 <Path x:Name="Arrow" Width="7" Height="6"
                                       Stretch="Fill" Margin="0,0,5,0"
                                       VerticalAlignment="Center"
                                       Data="M 0,6 L 3.5,0 L 7,6 Z"
-                                      Fill="{StaticResource Label3}"
+                                      Fill="{DynamicResource Label3}"
                                       RenderTransformOrigin="0.5,0.5">
                                     <Path.RenderTransform>
                                         <RotateTransform x:Name="ArrowRotate" Angle="0" />
@@ -206,7 +213,7 @@
                                 <TextBlock x:Name="HeroPct" Text=""
                                            FontSize="11.5" FontWeight="SemiBold"
                                            Typography.NumeralAlignment="Tabular"
-                                           Foreground="{StaticResource Label3}" />
+                                           Foreground="{DynamicResource Label3}" />
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -222,13 +229,13 @@
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock x:Name="InvestedText" Text="" FontSize="12"
                                            Typography.NumeralAlignment="Tabular"
-                                           Foreground="{StaticResource Label3}"
+                                           Foreground="{DynamicResource Label3}"
                                            AutomationProperties.Name="Invested" />
                                 <Path Width="9" Height="9" Margin="8,1,8,0"
                                       VerticalAlignment="Center"
                                       Data="{StaticResource IconArrow}"
                                       Stretch="Uniform"
-                                      Stroke="{StaticResource Label4}"
+                                      Stroke="{DynamicResource Label4}"
                                       StrokeThickness="1.6"
                                       StrokeStartLineCap="Round"
                                       StrokeEndLineCap="Round"
@@ -236,7 +243,7 @@
                                 <TextBlock x:Name="CurrentText" Text="" FontSize="12"
                                            FontWeight="SemiBold"
                                            Typography.NumeralAlignment="Tabular"
-                                           Foreground="{StaticResource Label}"
+                                           Foreground="{DynamicResource Label}"
                                            AutomationProperties.Name="Current value" />
                             </StackPanel>
 
@@ -244,7 +251,7 @@
                                        HorizontalAlignment="Right"
                                        FontSize="12" FontWeight="Medium"
                                        Typography.NumeralAlignment="Tabular"
-                                       Foreground="{StaticResource Label3}"
+                                       Foreground="{DynamicResource Label3}"
                                        AutomationProperties.Name="Overall profit and loss" />
                         </Grid>
 
@@ -254,12 +261,12 @@
                              needs no suppression. -->
                         <Canvas x:Name="TrackHost" Height="10">
                             <Border Height="4" Canvas.Top="3" Canvas.Left="0" Width="332"
-                                    CornerRadius="2" Background="{StaticResource Track}" />
+                                    CornerRadius="2" Background="{DynamicResource Track}" />
                             <Border x:Name="DeltaFill" Height="4" Canvas.Top="3"
                                     Canvas.Left="166" Width="0" CornerRadius="2" />
                             <Border x:Name="Notch" Width="1.5" Height="10"
                                     Canvas.Top="0" Canvas.Left="165.25"
-                                    CornerRadius="1" Background="{StaticResource Label3}" />
+                                    CornerRadius="1" Background="{DynamicResource Label3}" />
                         </Canvas>
                     </StackPanel>
                 </StackPanel>
@@ -313,7 +320,7 @@
                           Width="13" Height="13"
                           Data="{StaticResource IconChevron}"
                           Stretch="Uniform"
-                          Stroke="{StaticResource Label3}"
+                          Stroke="{DynamicResource Label3}"
                           StrokeThickness="1.6"
                           StrokeStartLineCap="Round"
                           StrokeEndLineCap="Round"
@@ -334,7 +341,7 @@
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0" Margin="20,14,20,0"
-                        BorderBrush="{StaticResource Separator}"
+                        BorderBrush="{DynamicResource Separator}"
                         BorderThickness="0,0,0,1">
                     <Canvas Height="30">
                         <!-- These are Buttons, not a TabControl, because the
@@ -346,13 +353,13 @@
                         <StackPanel x:Name="TabRow" Orientation="Horizontal"
                                     Canvas.Left="0" Canvas.Top="6">
                             <Button x:Name="StocksTab" Style="{StaticResource Tab}"
-                                    Foreground="{StaticResource Label}" Margin="0,0,24,0"
+                                    Foreground="{DynamicResource Label}" Margin="0,0,24,0"
                                     AutomationProperties.Name="Stocks"
                                     AutomationProperties.ItemStatus="selected">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="Stocks" />
                                     <TextBlock x:Name="StocksCount" Text="" Margin="6,0,0,0"
-                                               Foreground="{StaticResource Label4}" />
+                                               Foreground="{DynamicResource Label4}" />
                                 </StackPanel>
                             </Button>
 
@@ -362,14 +369,14 @@
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="Funds" />
                                     <TextBlock x:Name="FundsCount" Text="" Margin="6,0,0,0"
-                                               Foreground="{StaticResource Label4}" />
+                                               Foreground="{DynamicResource Label4}" />
                                 </StackPanel>
                             </Button>
                         </StackPanel>
 
                         <Border x:Name="Underline" Height="2" Width="44"
                                 Canvas.Left="0" Canvas.Top="28"
-                                CornerRadius="1" Background="{StaticResource Label}" />
+                                CornerRadius="1" Background="{DynamicResource Label}" />
                     </Canvas>
                 </Border>
 
@@ -416,18 +423,18 @@
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Symbol}"
                                                        FontSize="12.5" FontWeight="Medium"
-                                                       Foreground="{StaticResource Label}"
+                                                       Foreground="{DynamicResource Label}"
                                                        TextTrimming="CharacterEllipsis" />
                                             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                                                 <TextBlock Text="{Binding InvestedDisplay}"
                                                            FontSize="10.5"
                                                            Typography.NumeralAlignment="Tabular"
-                                                           Foreground="{StaticResource Label4}" />
+                                                           Foreground="{DynamicResource Label4}" />
                                                 <Path Width="8" Height="8" Margin="6,1,6,0"
                                                       VerticalAlignment="Center"
                                                       Data="{StaticResource IconArrow}"
                                                       Stretch="Uniform"
-                                                      Stroke="{StaticResource Label4}"
+                                                      Stroke="{DynamicResource Label4}"
                                                       StrokeThickness="1.5"
                                                       StrokeStartLineCap="Round"
                                                       StrokeEndLineCap="Round"
@@ -435,7 +442,7 @@
                                                 <TextBlock Text="{Binding CurrentDisplay}"
                                                            FontSize="10.5"
                                                            Typography.NumeralAlignment="Tabular"
-                                                           Foreground="{StaticResource Label3}" />
+                                                           Foreground="{DynamicResource Label3}" />
                                             </StackPanel>
                                         </StackPanel>
 
@@ -477,26 +484,26 @@
                 <StackPanel x:Name="EmptyState" Grid.Row="1" Visibility="Collapsed"
                             HorizontalAlignment="Center" VerticalAlignment="Center">
                     <TextBlock x:Name="EmptyText" Text="No stocks held"
-                               FontSize="12.5" Foreground="{StaticResource Label3}"
+                               FontSize="12.5" Foreground="{DynamicResource Label3}"
                                HorizontalAlignment="Center" />
                     <TextBlock x:Name="EmptySub" Text="" FontSize="11"
-                               Foreground="{StaticResource Label4}"
+                               Foreground="{DynamicResource Label4}"
                                HorizontalAlignment="Center" Margin="0,6,0,0" />
                 </StackPanel>
             </Grid>
 
             <!-- ============ OVERLAY ============ -->
             <Border x:Name="Overlay" Grid.RowSpan="3"
-                    Background="{StaticResource Scrim}" Visibility="Collapsed">
+                    Background="{DynamicResource Scrim}" Visibility="Collapsed">
                 <StackPanel VerticalAlignment="Center" Margin="30,0">
                     <TextBlock x:Name="OverlayTitle" Text="Connect Kite"
                                FontFamily="Segoe UI Variable Display, Segoe UI"
                                FontSize="19" FontWeight="SemiBold"
-                               Foreground="{StaticResource Label}" />
+                               Foreground="{DynamicResource Label}" />
                     <TextBlock x:Name="OverlayBody"
                                Text="Add your API credentials to begin."
                                FontSize="12" LineHeight="19"
-                               Foreground="{StaticResource Label2}"
+                               Foreground="{DynamicResource Label2}"
                                TextWrapping="Wrap" Margin="0,8,0,20" />
                     <Button x:Name="OverlayButton" Content="Set up"
                             Style="{StaticResource Primary}"
@@ -514,7 +521,7 @@
                     Margin="0,0,0,18" Padding="13,8"
                     CornerRadius="9" Opacity="0"
                     Background="#F2242830"
-                    BorderBrush="{StaticResource Separator}"
+                    BorderBrush="{DynamicResource Separator}"
                     BorderThickness="1"
                     IsHitTestVisible="False"
                     Panel.ZIndex="20"
@@ -523,7 +530,7 @@
                     <TranslateTransform x:Name="ToastLift" Y="8" />
                 </Border.RenderTransform>
                 <TextBlock x:Name="ToastText" Text="" FontSize="11.5"
-                           Foreground="{StaticResource Label}" />
+                           Foreground="{DynamicResource Label}" />
             </Border>
 
         </Grid>

@@ -19,6 +19,15 @@ public enum PinMode
     Desktop
 }
 
+public enum ThemeMode
+{
+    /// <summary>Follows the Windows app theme, and changes with it. The default.</summary>
+    System,
+
+    Dark,
+    Light
+}
+
 public enum BackdropMode
 {
     /// <summary>Dawn, day, dusk, night -- follows the clock. The default.</summary>
@@ -55,6 +64,17 @@ public sealed class WidgetState
     public string Tab { get; set; } = "stocks";
     public PinMode Pin { get; set; } = PinMode.Desktop;
     public BackdropMode Backdrop { get; set; } = BackdropMode.TimeOfDay;
+
+    /// <summary>
+    /// Which palette to paint with. Defaults to following Windows, so a user
+    /// who has never opened Settings gets the theme they already asked the OS
+    /// for rather than whichever one we happened to build first.
+    ///
+    /// The enum is declared here, not beside the Theme service: this file is
+    /// compiled into the plain-net8.0 test assembly, and anything reaching into
+    /// System.Windows from here would drag WPF onto it.
+    /// </summary>
+    public ThemeMode Theme { get; set; } = ThemeMode.System;
 
     /// <summary>Absolute path of the user-chosen image (Custom mode only).
     /// Points inside %APPDATA%\KiteGlance, where we copy the picked file, so

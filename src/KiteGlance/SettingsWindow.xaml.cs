@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Input;
 using KiteGlance.Interop;
 using KiteGlance.Services;
+using KiteGlance.State;
 
 namespace KiteGlance;
 
@@ -15,13 +16,18 @@ public partial class SettingsWindow : Window
     /// </summary>
     public int RefreshIntervalMinutes { get; private set; }
 
-    public SettingsWindow() : this(5) { }
+    /// <summary>Which palette to paint with. Read back after the dialog
+    /// returns true, the same way the interval is.</summary>
+    public ThemeMode Theme { get; private set; }
 
-    public SettingsWindow(int refreshIntervalMinutes)
+    public SettingsWindow() : this(5, ThemeMode.System) { }
+
+    public SettingsWindow(int refreshIntervalMinutes, ThemeMode theme)
     {
         InitializeComponent();
 
         RefreshIntervalMinutes = refreshIntervalMinutes;
+        Theme = theme;
 
         DragBar.MouseLeftButtonDown += (_, e) =>
         {
@@ -36,6 +42,7 @@ public partial class SettingsWindow : Window
         SecretBox.Password = secret ?? "";
 
         SelectInterval(refreshIntervalMinutes);
+        ThemeBox.SelectedValue = theme.ToString();
     }
 
     /// <summary>
@@ -71,6 +78,17 @@ public partial class SettingsWindow : Window
         return RefreshIntervalMinutes;
     }
 
+    private ThemeMode SelectedTheme()
+    {
+        if (ThemeBox.SelectedItem is System.Windows.Controls.ComboBoxItem item &&
+            item.Tag is string tag &&
+            Enum.TryParse<ThemeMode>(tag, out var mode))
+        {
+            return mode;
+        }
+        return Theme;
+    }
+
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
@@ -98,6 +116,7 @@ public partial class SettingsWindow : Window
         {
             _vault.SaveCredentials(key, secret);
             RefreshIntervalMinutes = SelectedInterval();
+            Theme = SelectedTheme();
             DialogResult = true;
             Close();
         }

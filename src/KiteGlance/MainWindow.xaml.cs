@@ -34,8 +34,23 @@ public partial class MainWindow : Window
     // expressive range rather than pinned to the end.
     private const double FullScale = 0.50;
 
-    private static readonly Color Green = Color.FromRgb(0x32, 0xD7, 0x4B);
-    private static readonly Color Red = Color.FromRgb(0xFF, 0x45, 0x3A);
+    // Read from the palette rather than baked in. As static readonly fields
+    // these kept their dark-theme values for the life of the process, so every
+    // gradient and alpha-blend built from them survived a theme switch
+    // unchanged. Properties, so a switch is picked up on the next render.
+    private static Color Green => PaletteColor("Green", 0x32, 0xD7, 0x4B);
+    private static Color Red => PaletteColor("Red", 0xFF, 0x45, 0x3A);
+
+    private static Color PaletteColor(string key, byte r, byte g, byte b)
+    {
+        if (System.Windows.Application.Current?.TryFindResource(key) is SolidColorBrush brush)
+            return brush.Color;
+
+        // The dark values, as a fallback for the designer and for tests that
+        // run without an Application.
+        return Color.FromRgb(r, g, b);
+    }
+
     private static readonly CultureInfo IN = new("en-IN");
 
     // Declaration order matters: _state is read to pick the account these two
@@ -592,7 +607,7 @@ public partial class MainWindow : Window
 
     private void OpenSettings()
     {
-        var dlg = new SettingsWindow(_state.RefreshIntervalMinutes) { Owner = this };
+        var dlg = new SettingsWindow(_state.RefreshIntervalMinutes, _state.Theme) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             _kite.ReloadCredentials();
@@ -603,6 +618,21 @@ public partial class MainWindow : Window
                 _state.RefreshIntervalMinutes = dlg.RefreshIntervalMinutes;
                 _state.Save();
                 ApplyRefreshInterval();
+            }
+
+            if (dlg.Theme != _state.Theme)
+            {
+                _state.Theme = dlg.Theme;
+                _state.Save();
+
+                // Swapping the palette dictionary repaints everything bound
+                // with DynamicResource; the backdrop is painted from code, so
+                // it has to be told separately.
+                Services.Theme.Apply(_state.Theme);
+                _backdropCurrent = null;
+                ApplyBackdrop(instant: true);
+
+                Log.Info("Theme changed to {Theme}", _state.Theme);
             }
 
             ShowSkeleton();
