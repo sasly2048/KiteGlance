@@ -27,6 +27,19 @@ public static class LoginServer
         </div></body></html>
         """;
 
+    private const string FailedPage = """
+        <!doctype html><html><head><meta charset="utf-8"><title>Kite Glance</title>
+        <style>
+        body{margin:0;height:100vh;display:grid;place-items:center;background:#0F1318;
+             color:#fff;font-family:"Segoe UI",system-ui,sans-serif}
+        .t{font-size:44px;color:#FF453A}
+        p{color:#A8B3BE}
+        </style></head><body><div style="text-align:center">
+        <div class="t">&#10005;</div><h2>Sign-in was not completed</h2>
+        <p>Kite cancelled or rejected the login. Return to the widget and try again.</p>
+        </div></body></html>
+        """;
+
     public static async Task<string> CaptureRequestTokenAsync(
         string loginUrl, int timeoutSeconds = 300)
     {
@@ -69,8 +82,20 @@ public static class LoginServer
                     sb.Append(Encoding.UTF8.GetString(buffer, 0, read));
 
                     var soFar = sb.ToString();
-                    if (soFar.Contains("\r\n\r\n") ||
-                        (soFar.Contains("\r\n") && soFar.Contains(" HTTP/")))
+
+                    // The end of the header block always means the whole
+                    // request line has arrived.
+                    if (soFar.Contains("\r\n\r\n")) break;
+
+                    // Otherwise the request line is only complete once a CRLF
+                    // appears *after* the " HTTP/" version token. The old test
+                    // accepted any CRLF anywhere alongside any " HTTP/"
+                    // anywhere, which a split TCP segment satisfies while the
+                    // query string -- and with it request_token -- is still
+                    // truncated.
+                    var version = soFar.IndexOf(" HTTP/", StringComparison.Ordinal);
+                    if (version >= 0 &&
+                        soFar.IndexOf("\r\n", version, StringComparison.Ordinal) > version)
                         break;
                 }
 
@@ -82,7 +107,18 @@ public static class LoginServer
                 var path = parts[1];
                 if (!path.StartsWith("/callback")) continue;
 
-                var body = Encoding.UTF8.GetBytes(DonePage);
+                var query = ParseQuery(path);
+
+                query.TryGetValue("request_token", out var token);
+                query.TryGetValue("status", out var status);
+
+                var succeeded = status == "success" && !string.IsNullOrEmpty(token);
+
+                // Decide first, then report. The page used to be sent before the
+                // status was examined, so a rejected login still showed the user
+                // a green "Connected to Kite" in the browser while the widget
+                // said the opposite.
+                var body = Encoding.UTF8.GetBytes(succeeded ? DonePage : FailedPage);
                 var head = Encoding.UTF8.GetBytes(
                     "HTTP/1.1 200 OK\r\n" +
                     "Content-Type: text/html; charset=utf-8\r\n" +
@@ -93,13 +129,7 @@ public static class LoginServer
                 await stream.WriteAsync(body, cts.Token);
                 await stream.FlushAsync(cts.Token);
 
-                var query = ParseQuery(path);
-
-                query.TryGetValue("request_token", out var token);
-                query.TryGetValue("status", out var status);
-
-                if (status == "success" && !string.IsNullOrEmpty(token))
-                    return token;
+                if (succeeded) return token!;
 
                 throw new Exception("Login was cancelled or rejected by Kite.");
             }

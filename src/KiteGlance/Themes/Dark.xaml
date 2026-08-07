@@ -1,0 +1,71 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        DARK
+        Apple's dark-mode system colors. The four-step label ladder
+        (100 / 55 / 30 / 18 percent white) is what gives Apple UI its depth
+        without drawing a single line.
+
+        The ladder is built from opacity over a single colour rather than four
+        fixed greys, which is why it survives being laid over any backdrop.
+        The light theme is the same ladder inverted, not a second palette.
+    -->
+    <SolidColorBrush x:Key="Green" Color="#32D74B" />
+    <SolidColorBrush x:Key="Red"   Color="#FF453A" />
+    <SolidColorBrush x:Key="Blue"  Color="#0A84FF" />
+    <SolidColorBrush x:Key="Amber" Color="#FF9F0A" />
+
+    <SolidColorBrush x:Key="Label"  Color="#FFFFFF" />
+    <SolidColorBrush x:Key="Label2" Color="#FFFFFF" Opacity="0.55" />
+    <SolidColorBrush x:Key="Label3" Color="#FFFFFF" Opacity="0.30" />
+    <SolidColorBrush x:Key="Label4" Color="#FFFFFF" Opacity="0.18" />
+
+    <SolidColorBrush x:Key="Fill"      Color="#FFFFFF" Opacity="0.05" />
+    <SolidColorBrush x:Key="Separator" Color="#FFFFFF" Opacity="0.08" />
+    <SolidColorBrush x:Key="Track"     Color="#FFFFFF" Opacity="0.07" />
+
+    <!--
+        BACKDROP
+        Painted from code: MainWindow crossfades between the four pre-rendered
+        mesh gradients in Assets/ (dawn, day, dusk, night; see BackdropService
+        for the selection rules) or a user-chosen image. Only the base Surface
+        colour lives here, as the paint under everything and the fallback if an
+        image fails to decode.
+    -->
+    <SolidColorBrush x:Key="Surface" Color="#FF101318" />
+
+    <!-- Lightens the dark backdrop art under a light theme. Fully transparent
+         here: the art was tuned for this theme and needs no correction. -->
+    <SolidColorBrush x:Key="BackdropTint" Color="#00FFFFFF" />
+
+    <LinearGradientBrush x:Key="Scrim" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0"   Color="#FF14171D" />
+        <GradientStop Offset="1"   Color="#FF0C0E12" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="TopSheen" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Offset="0"   Color="#00FFFFFF" />
+        <GradientStop Offset="0.5" Color="#26FFFFFF" />
+        <GradientStop Offset="1"   Color="#00FFFFFF" />
+    </LinearGradientBrush>
+
+    <!--
+        GRAIN
+        A near-black vertical gradient on an 8-bit display bands: flat plateaus
+        of colour with hard steps between them. Tiled monochrome noise at 2.5%
+        dithers those plateaus into stochastic pixels, and the eye integrates
+        them back into a smooth ramp.
+
+        You have never consciously noticed this on Linear or Arc. That is
+        exactly the point. It is felt, not seen.
+    -->
+    <ImageBrush x:Key="Grain"
+                ImageSource="../Assets/grain.png"
+                TileMode="Tile"
+                Viewport="0,0,128,128"
+                ViewportUnits="Absolute"
+                Opacity="0.028"
+                Stretch="None" />
+
+</ResourceDictionary>

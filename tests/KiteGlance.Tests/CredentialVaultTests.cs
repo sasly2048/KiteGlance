@@ -26,6 +26,102 @@ public class CredentialVaultTests : IDisposable
         Environment.SetEnvironmentVariable("APPDATA", _testDir, EnvironmentVariableTarget.Process);
     }
 
+    /// <summary>
+    /// Flipping a byte of the ciphertext must be detected, not decrypted into
+    /// garbage. The old portable path was unauthenticated CBC, where a tampered
+    /// blob could yield valid-looking padding and hand back a corrupted API key
+    /// that the app would then send to Kite. DPAPI (Windows) has its own
+    /// integrity check; AES-GCM provides it everywhere else.
+    /// </summary>
+    /// <summary>
+    /// Two accounts must not read each other's credentials.
+    /// </summary>
+    [Fact]
+    public void Accounts_have_separate_vaults()
+    {
+        new CredentialVault(_testDir, "AB1234").SaveCredentials("ada-key", "ada-secret");
+        new CredentialVault(_testDir, "CD5678").SaveCredentials("grace-key", "grace-secret");
+
+        Assert.Equal("ada-key", new CredentialVault(_testDir, "AB1234").GetCredentials().ApiKey);
+        Assert.Equal("grace-key", new CredentialVault(_testDir, "CD5678").GetCredentials().ApiKey);
+    }
+
+    /// <summary>
+    /// The account id comes from an API response and becomes a directory name,
+    /// so a traversal attempt must not escape the accounts folder.
+    /// </summary>
+    [Fact]
+    public void A_hostile_account_id_cannot_escape_the_accounts_folder()
+    {
+        var vault = new CredentialVault(_testDir, "../../escaped");
+        vault.SaveCredentials("k", "s");
+
+        var accountsRoot = Path.Combine(_testDir, "KiteGlance", "accounts");
+        Assert.True(Directory.Exists(accountsRoot));
+
+        // Nothing was created outside the KiteGlance tree.
+        Assert.False(Directory.Exists(Path.Combine(_testDir, "escaped")));
+        Assert.False(File.Exists(Path.Combine(_testDir, "escaped", "vault.bin")));
+    }
+
+    /// <summary>
+    /// An existing install has credentials at the root, not under accounts/.
+    /// The default vault must keep reading them.
+    /// </summary>
+    [Fact]
+    public void The_default_vault_still_reads_the_legacy_root_location()
+    {
+        new CredentialVault(_testDir).SaveCredentials("legacy-key", "legacy-secret");
+
+        var rootVault = Path.Combine(_testDir, "KiteGlance", "vault.bin");
+        Assert.True(File.Exists(rootVault));
+        Assert.Equal("legacy-key", new CredentialVault(_testDir).GetCredentials().ApiKey);
+    }
+
+    [Fact]
+    public void Tampered_vault_never_yields_credentials()
+    {
+        var vault = new CredentialVault(_testDir);
+        vault.SaveCredentials("real-api-key", "real-api-secret");
+
+        var credFile = Path.Combine(_testDir, "KiteGlance", "vault.bin");
+        var blob = File.ReadAllBytes(credFile);
+
+        // Corrupt a byte near the end, inside the ciphertext/tag region.
+        blob[^2] ^= 0xFF;
+        File.WriteAllBytes(credFile, blob);
+
+        var (apiKey, apiSecret) = new CredentialVault(_testDir).GetCredentials();
+
+        Assert.Null(apiKey);
+        Assert.Null(apiSecret);
+    }
+
+    [Fact]
+    public void Truncated_vault_is_rejected_cleanly()
+    {
+        var vault = new CredentialVault(_testDir);
+        vault.SaveCredentials("k", "s");
+
+        var credFile = Path.Combine(_testDir, "KiteGlance", "vault.bin");
+        File.WriteAllBytes(credFile, new byte[] { 1, 2, 3 });
+
+        // Must degrade to "no credentials", not throw out of the vault.
+        var (apiKey, _) = new CredentialVault(_testDir).GetCredentials();
+        Assert.Null(apiKey);
+    }
+
+    [Fact]
+    public void Round_trip_survives_a_second_vault_instance()
+    {
+        new CredentialVault(_testDir).SaveCredentials("persisted-key", "persisted-secret");
+
+        var (apiKey, apiSecret) = new CredentialVault(_testDir).GetCredentials();
+
+        Assert.Equal("persisted-key", apiKey);
+        Assert.Equal("persisted-secret", apiSecret);
+    }
+
     [Fact]
     public void SaveCredentials_writes_encrypted_file()
     {

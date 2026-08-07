@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Input;
 using KiteGlance.Interop;
 using KiteGlance.Services;
+using KiteGlance.State;
 
 namespace KiteGlance;
 
@@ -9,9 +10,24 @@ public partial class SettingsWindow : Window
 {
     private readonly CredentialVault _vault = new();
 
-    public SettingsWindow()
+    /// <summary>
+    /// Auto-refresh cadence in minutes, 0 for manual-only. Seeded from the
+    /// caller's state and read back after the dialog returns true.
+    /// </summary>
+    public int RefreshIntervalMinutes { get; private set; }
+
+    /// <summary>Which palette to paint with. Read back after the dialog
+    /// returns true, the same way the interval is.</summary>
+    public ThemeMode Theme { get; private set; }
+
+    public SettingsWindow() : this(5, ThemeMode.System) { }
+
+    public SettingsWindow(int refreshIntervalMinutes, ThemeMode theme)
     {
         InitializeComponent();
+
+        RefreshIntervalMinutes = refreshIntervalMinutes;
+        Theme = theme;
 
         DragBar.MouseLeftButtonDown += (_, e) =>
         {
@@ -24,6 +40,53 @@ public partial class SettingsWindow : Window
         var (key, secret) = _vault.GetCredentials();
         KeyBox.Text = key ?? "";
         SecretBox.Password = secret ?? "";
+
+        SelectInterval(refreshIntervalMinutes);
+        ThemeBox.SelectedValue = theme.ToString();
+    }
+
+    /// <summary>
+    /// Picks the item matching the stored interval. An interval that is not one
+    /// of the offered choices (hand-edited state.json) falls back to the 5-minute
+    /// default rather than leaving the box blank.
+    /// </summary>
+    private void SelectInterval(int minutes)
+    {
+        foreach (var obj in IntervalBox.Items)
+        {
+            if (obj is System.Windows.Controls.ComboBoxItem item &&
+                item.Tag is string tag &&
+                int.TryParse(tag, out var value) &&
+                value == minutes)
+            {
+                IntervalBox.SelectedItem = item;
+                return;
+            }
+        }
+
+        IntervalBox.SelectedValue = "5";
+    }
+
+    private int SelectedInterval()
+    {
+        if (IntervalBox.SelectedItem is System.Windows.Controls.ComboBoxItem item &&
+            item.Tag is string tag &&
+            int.TryParse(tag, out var value))
+        {
+            return value;
+        }
+        return RefreshIntervalMinutes;
+    }
+
+    private ThemeMode SelectedTheme()
+    {
+        if (ThemeBox.SelectedItem is System.Windows.Controls.ComboBoxItem item &&
+            item.Tag is string tag &&
+            Enum.TryParse<ThemeMode>(tag, out var mode))
+        {
+            return mode;
+        }
+        return Theme;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -52,6 +115,8 @@ public partial class SettingsWindow : Window
         try
         {
             _vault.SaveCredentials(key, secret);
+            RefreshIntervalMinutes = SelectedInterval();
+            Theme = SelectedTheme();
             DialogResult = true;
             Close();
         }

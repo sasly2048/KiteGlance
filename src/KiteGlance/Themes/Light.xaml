@@ -1,0 +1,70 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        LIGHT
+        The same structure as Dark.xaml, key for key. Anything referenced by a
+        template must exist in both or a theme switch throws at lookup time.
+
+        Not a mechanical inversion. Two reasons:
+
+        1. Apple's semantic colours differ between modes. systemGreen is
+           #32D74B on dark and #34C759 on light; systemRed #FF453A and #FF3B30.
+           The dark variants are lifted to hold up against a dark field and
+           read as fluorescent on white.
+
+        2. The label ladder inverts, but not at the same opacities. Light text
+           on a dark field looks thinner than dark text on a light one at equal
+           opacity, so black at 0.55 reads heavier than white at 0.55 did.
+           Each step is pulled back to match the weight, not the number.
+    -->
+    <SolidColorBrush x:Key="Green" Color="#34C759" />
+    <SolidColorBrush x:Key="Red"   Color="#FF3B30" />
+    <SolidColorBrush x:Key="Blue"  Color="#007AFF" />
+    <SolidColorBrush x:Key="Amber" Color="#FF9500" />
+
+    <SolidColorBrush x:Key="Label"  Color="#000000" Opacity="0.92" />
+    <SolidColorBrush x:Key="Label2" Color="#000000" Opacity="0.50" />
+    <SolidColorBrush x:Key="Label3" Color="#000000" Opacity="0.28" />
+    <SolidColorBrush x:Key="Label4" Color="#000000" Opacity="0.16" />
+
+    <SolidColorBrush x:Key="Fill"      Color="#000000" Opacity="0.04" />
+    <SolidColorBrush x:Key="Separator" Color="#000000" Opacity="0.09" />
+    <SolidColorBrush x:Key="Track"     Color="#000000" Opacity="0.07" />
+
+    <SolidColorBrush x:Key="Surface" Color="#FFF4F4F6" />
+
+    <!--
+        The eight backdrops are dark-tuned raster art. Repainting them for
+        light mode is a commission, not a code change, so instead a near-opaque
+        light tint is laid over whichever one is showing. Enough of the image
+        survives to keep the time-of-day feel; not enough to fight the text.
+    -->
+    <SolidColorBrush x:Key="BackdropTint" Color="#F2F4F4F6" />
+
+    <LinearGradientBrush x:Key="Scrim" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0"   Color="#FFF8F8FA" />
+        <GradientStop Offset="1"   Color="#FFECECEF" />
+    </LinearGradientBrush>
+
+    <!-- A white sheen is invisible on a light surface. The same gesture in
+         light mode is a faint dark line, which is what a raised edge casts. -->
+    <LinearGradientBrush x:Key="TopSheen" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Offset="0"   Color="#00000000" />
+        <GradientStop Offset="0.5" Color="#14000000" />
+        <GradientStop Offset="1"   Color="#00000000" />
+    </LinearGradientBrush>
+
+    <!-- Banding is a dark-gradient problem: the plateaus the noise exists to
+         break up do not form across a light surface. Kept at a key so lookups
+         resolve, but effectively off, since dithering a light field only makes
+         it look dirty. -->
+    <ImageBrush x:Key="Grain"
+                ImageSource="../Assets/grain.png"
+                TileMode="Tile"
+                Viewport="0,0,128,128"
+                ViewportUnits="Absolute"
+                Opacity="0.012"
+                Stretch="None" />
+
+</ResourceDictionary>

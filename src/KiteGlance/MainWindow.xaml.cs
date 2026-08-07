@@ -34,14 +34,33 @@ public partial class MainWindow : Window
     // expressive range rather than pinned to the end.
     private const double FullScale = 0.50;
 
-    private static readonly Color Green = Color.FromRgb(0x32, 0xD7, 0x4B);
-    private static readonly Color Red = Color.FromRgb(0xFF, 0x45, 0x3A);
+    // Read from the palette rather than baked in. As static readonly fields
+    // these kept their dark-theme values for the life of the process, so every
+    // gradient and alpha-blend built from them survived a theme switch
+    // unchanged. Properties, so a switch is picked up on the next render.
+    private static Color Green => PaletteColor("Green", 0x32, 0xD7, 0x4B);
+    private static Color Red => PaletteColor("Red", 0xFF, 0x45, 0x3A);
+
+    private static Color PaletteColor(string key, byte r, byte g, byte b)
+    {
+        if (System.Windows.Application.Current?.TryFindResource(key) is SolidColorBrush brush)
+            return brush.Color;
+
+        // The dark values, as a fallback for the designer and for tests that
+        // run without an Application.
+        return Color.FromRgb(r, g, b);
+    }
+
     private static readonly CultureInfo IN = new("en-IN");
 
-    private readonly KiteService _kite = new();
-    private readonly CredentialVault _vault = new();
-    private readonly ObservableCollection<HoldingViewModel> _rows = new();
+    // Declaration order matters: _state is read to pick the account these two
+    // are opened against, so it must be initialised first.
     private readonly WidgetState _state = WidgetState.Load();
+    private KiteService _kite;
+    private CredentialVault _vault;
+    private readonly ObservableCollection<HoldingViewModel> _rows = new();
+    private PriceHistoryService _history;
+    private bool _backfilled;
     private System.Timers.Timer? _sessionCheckTimer;
     private System.Timers.Timer? _autoRefreshTimer;
 
@@ -60,6 +79,14 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        // Opened against whichever account is active. With no accounts
+        // configured this resolves to null and reads the original root vault,
+        // so an existing install behaves exactly as before.
+        var accountId = _state.ResolvedAccountId;
+        _kite = new KiteService(accountId);
+        _vault = new CredentialVault(accountId: accountId);
+        _history = new PriceHistoryService(accountId: accountId);
+
         HoldingsList.ItemsSource = _rows;
 
         DragBar.MouseLeftButtonDown += (_, e) =>
@@ -73,6 +100,7 @@ public partial class MainWindow : Window
         FundsTab.Click += (_, _) => SwitchTab("funds");
 
         HoldingsList.PreviewMouseLeftButtonUp += RowClicked;
+        HoldingsList.PreviewKeyDown += RowKeyDown;
 
         PreviewKeyDown += OnKey;
         LocationChanged += (_, _) => QueueSave();
@@ -80,6 +108,24 @@ public partial class MainWindow : Window
         Restore();
         ShowSkeleton();
         ApplyBackdrop(instant: true);
+        ApplyHighContrast();
+
+        // High contrast can be switched on mid-session (Left Alt + Left Shift +
+        // Print Screen), so it is watched rather than read once at startup.
+        SystemParameters.StaticPropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(SystemParameters.HighContrast)) return;
+            Dispatcher.Invoke(ApplyHighContrast);
+        };
+
+        // Windows' own light/dark switch. WPF predates that setting and does
+        // not surface it, so it arrives as a General preference change and the
+        // registry has to be re-read. This matters most for the default mode:
+        // a user who never opens Settings is exactly the one who would
+        // otherwise watch Windows go light while the widget stayed dark.
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
+        Closed += (_, _) =>
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemPreferenceChanged;
 
         // The sync label ages in place: "just now" becomes "2m ago" without
         // needing a refresh to make it true. The same tick re-evaluates the
@@ -109,27 +155,10 @@ public partial class MainWindow : Window
         };
         _sessionCheckTimer.Start();
 
-        // Auto-refresh portfolio data during market hours. Defaults to every
-        // 5 minutes to keep data fresh without hammering the API. Users can
-        // disable or adjust this in Settings if needed.
-        var autoRefreshInterval = GetAutoRefreshIntervalMinutes();
-        if (autoRefreshInterval > 0)
-        {
-            _autoRefreshTimer = new System.Timers.Timer(autoRefreshInterval * 60_000)
-            {
-                AutoReset = true,
-                Enabled = true
-            };
-            _autoRefreshTimer.Elapsed += async (_, _) =>
-            {
-                // Only auto-refresh during market hours and when not already showing an overlay
-                if (MarketOpen() && Overlay.Visibility != Visibility.Visible)
-                {
-                    await Dispatcher.InvokeAsync(async () => await RefreshAsync(manual: false));
-                }
-            };
-            _autoRefreshTimer.Start();
-        }
+        // Auto-refresh during market hours, at the interval the user chose in
+        // Settings. Built here and rebuilt on change, so both paths share one
+        // definition.
+        ApplyRefreshInterval();
     }
 
     // ==== Placement =====================================================
@@ -137,6 +166,17 @@ public partial class MainWindow : Window
     private void Restore()
     {
         var wa = SystemParameters.WorkArea;
+
+        // Pull a saved position back onto a display that still exists rather
+        // than only accepting or rejecting it: a monitor that moved in the
+        // virtual desktop leaves coordinates that are wrong but recoverable.
+        _state.ClampToVisibleArea(
+            SystemParameters.VirtualScreenLeft,
+            SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth,
+            SystemParameters.VirtualScreenHeight,
+            Width,
+            Height);
 
         if (_state.Left is { } l && _state.Top is { } t && OnScreen(l, t))
         {
@@ -297,8 +337,93 @@ public partial class MainWindow : Window
     /// A change crossfades over ~1.2s -- dusk should arrive the way it does
     /// outside, not like a slide projector.
     /// </summary>
+    /// <summary>
+    /// Repaints when Windows' own theme changes, but only while the user has
+    /// asked us to follow it. Someone who explicitly picked Dark or Light has
+    /// overridden the OS, and quietly switching out from under them would
+    /// discard that choice.
+    /// </summary>
+    private void OnSystemPreferenceChanged(
+        object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category != Microsoft.Win32.UserPreferenceCategory.General) return;
+        if (_state.Theme != ThemeMode.System) return;
+
+        Dispatcher.Invoke(() =>
+        {
+            // General fires for several unrelated preferences, so this lands
+            // more often than the theme actually changes. Bail unless the
+            // resolved theme really differs, or every stray notification would
+            // rebuild the palette and reload a backdrop image.
+            if (Services.Theme.IsLight == Services.Theme.WindowsPrefersLight()) return;
+
+            Services.Theme.Apply(ThemeMode.System);
+            _backdropCurrent = null;
+            ApplyBackdrop(instant: true);
+
+            Log.Info("Followed Windows theme change to {Theme}",
+                Services.Theme.IsLight ? "Light" : "Dark");
+        });
+    }
+
+    /// <summary>
+    /// High contrast is a request for legibility over decoration, so in that
+    /// mode the decoration comes off: the photographic backdrop, the grain
+    /// dither, the accent wash and the list's fade mask all sit on top of the
+    /// contrast the mode guarantees, and each one erodes it.
+    ///
+    /// What is left is the plain surface with the palette's own foregrounds --
+    /// deliberately duller than the widget is meant to look, which is the
+    /// correct trade when the user has asked the OS for exactly that.
+    /// </summary>
+    private void ApplyHighContrast()
+    {
+        var on = SystemParameters.HighContrast;
+
+        Grain.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+
+        if (on)
+        {
+            BackdropFront.Fill = null;
+            BackdropBack.Fill = null;
+            BackdropScrim.Opacity = 0;
+            Wash.Opacity = 0;
+
+            // Force the next ApplyBackdrop to redraw rather than short-circuit
+            // on an unchanged path, for when the user switches back.
+            _backdropCurrent = null;
+        }
+        else
+        {
+            ApplyBackdrop(instant: true);
+        }
+
+        // The mask fades the top and bottom rows to transparent. That is a
+        // legibility cost paid for a soft edge, which is the wrong trade here.
+        HoldingsList.SetValue(HighContrastProperty, on);
+    }
+
+    /// <summary>
+    /// Read by the holdings list template to drop its edge fade. An attached
+    /// flag rather than a second style, so the one template stays the single
+    /// description of the list.
+    /// </summary>
+    public static readonly DependencyProperty HighContrastProperty =
+        DependencyProperty.RegisterAttached(
+            "HighContrast", typeof(bool), typeof(MainWindow),
+            new PropertyMetadata(false));
+
+    public static bool GetHighContrast(DependencyObject o) =>
+        (bool)o.GetValue(HighContrastProperty);
+
+    public static void SetHighContrast(DependencyObject o, bool value) =>
+        o.SetValue(HighContrastProperty, value);
+
     private void ApplyBackdrop(bool instant = false)
     {
+        // A backdrop image would sit under the text and defeat the point.
+        if (SystemParameters.HighContrast) return;
+
         string path;
         var custom = false;
 
@@ -387,7 +512,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            Log.Error($"Backdrop load failed: {path}", ex);
+            Log.Error(ex, "Backdrop load failed: {Path}", path);
             return null;
         }
     }
@@ -446,6 +571,10 @@ public partial class MainWindow : Window
             ShowLogin();
             return;
         }
+
+        // The profile call above tells us which Kite user these credentials
+        // belong to; record it so the account can appear in the switcher.
+        RememberActiveAccount();
 
         HideOverlay();
         await RefreshAsync();
@@ -516,10 +645,34 @@ public partial class MainWindow : Window
 
     private void OpenSettings()
     {
-        var dlg = new SettingsWindow { Owner = this };
+        var dlg = new SettingsWindow(_state.RefreshIntervalMinutes, _state.Theme) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             _kite.ReloadCredentials();
+
+            // Persist and apply the chosen cadence without a restart.
+            if (dlg.RefreshIntervalMinutes != _state.RefreshIntervalMinutes)
+            {
+                _state.RefreshIntervalMinutes = dlg.RefreshIntervalMinutes;
+                _state.Save();
+                ApplyRefreshInterval();
+            }
+
+            if (dlg.Theme != _state.Theme)
+            {
+                _state.Theme = dlg.Theme;
+                _state.Save();
+
+                // Swapping the palette dictionary repaints everything bound
+                // with DynamicResource; the backdrop is painted from code, so
+                // it has to be told separately.
+                Services.Theme.Apply(_state.Theme);
+                _backdropCurrent = null;
+                ApplyBackdrop(instant: true);
+
+                Log.Info("Theme changed to {Theme}", _state.Theme);
+            }
+
             ShowSkeleton();
             _ = RefreshAsync();
         }
@@ -573,6 +726,8 @@ public partial class MainWindow : Window
             _portfolio = await _kite.GetPortfolioAsync();
             _syncedAt = DateTime.Now;
 
+            await UpdatePriceHistoryAsync(_portfolio);
+
             Render();
             ShowSummary();
             PaintSyncLabel();
@@ -591,6 +746,10 @@ public partial class MainWindow : Window
             StopBreathing();
             LiveDot.Fill = (Brush)FindResource("Amber");
 
+            // Amber is the whole message here, and colour alone is not a message.
+            System.Windows.Automation.AutomationProperties.SetName(
+                LiveStatus, "Cannot reach Kite");
+
             // Stale, not blank. The last-known numbers are still the truest
             // thing on screen; say when they were true and leave them up.
             SyncLabel.Text = _syncedAt == default
@@ -599,6 +758,70 @@ public partial class MainWindow : Window
 
             if (_syncedAt == default) ShowSummary();
             if (manual) Flash("Couldn't reach Kite");
+        }
+    }
+
+    /// <summary>
+    /// Feeds this refresh's prices into the sparkline history, and -- once per
+    /// run, for equities only -- tries to backfill real candles from Kite so a
+    /// subscribed user does not have to wait days for a line.
+    ///
+    /// Deliberately best-effort throughout. A sparkline is decoration; nothing
+    /// here may delay or fail a refresh that has already produced good numbers.
+    /// </summary>
+    private async Task UpdatePriceHistoryAsync(PortfolioData portfolio)
+    {
+        try
+        {
+            foreach (var h in portfolio.Holdings)
+            {
+                if (h.AwaitingPrice) continue;   // a cost-basis stand-in is not a price
+                _history.Record(h.Symbol, h.LastPrice);
+            }
+
+            // Drop symbols no longer held, so the file tracks the portfolio
+            // rather than growing for the life of the install.
+            _history.Retain(portfolio.Holdings.Select(h => h.Symbol));
+
+            if (!_backfilled)
+            {
+                _backfilled = true;
+                await BackfillHistoryAsync(portfolio);
+            }
+
+            _history.Save();
+        }
+        catch (KiteAuthException) { throw; }
+        catch (Exception ex)
+        {
+            Log.Warn("Price history update failed ({Error}); sparklines may be missing",
+                ex.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// Asks Kite for real daily candles for holdings whose local series is thin.
+    ///
+    /// Runs once per app run, not per refresh: the answer barely changes
+    /// intraday, the endpoint is rate-limited, and on the overwhelmingly common
+    /// unsubscribed account every call is a 403. The first failure stops the
+    /// loop so an unsubscribed user with thirty holdings makes one wasted
+    /// request rather than thirty.
+    /// </summary>
+    private async Task BackfillHistoryAsync(PortfolioData portfolio)
+    {
+        foreach (var h in portfolio.Holdings)
+        {
+            if (h.InstrumentToken is not { } token) continue;   // funds have none
+            if (_history.IsComplete(h.Symbol)) continue;
+
+            var closes = await _kite.GetDailyClosesAsync(token, PriceHistoryService.MaxPoints);
+
+            // Null means no subscription (or the endpoint is unhappy). Either
+            // way it will be null for every other holding too.
+            if (closes is null) return;
+
+            _history.Seed(h.Symbol, closes);
         }
     }
 
@@ -690,6 +913,10 @@ public partial class MainWindow : Window
 
         _breath = sb;
         sb.Begin();
+
+        // The pulse IS the "market is open" signal, and a pulse cannot be heard.
+        // Say it, in the one place that already knows.
+        System.Windows.Automation.AutomationProperties.SetName(LiveStatus, "Market open");
     }
 
     private void StopBreathing()
@@ -701,6 +928,8 @@ public partial class MainWindow : Window
 
         LiveHalo.Opacity = 0;
         LiveDot.Opacity = 1;
+
+        System.Windows.Automation.AutomationProperties.SetName(LiveStatus, "Market closed");
     }
 
     public static bool MarketOpen()
@@ -802,6 +1031,15 @@ public partial class MainWindow : Window
 
         if (animate) PulseHero();
 
+        // The two halves of the hero are one sentence, so they are announced as
+        // one. Numeral.Set animates the visible digits over ~700ms; reading the
+        // mid-count value would be wrong, so this states the settled figure.
+        System.Windows.Automation.AutomationProperties.SetName(Hero,
+            (isFunds ? "Funds today, " : "Today, ")
+            + (heroVal >= 0 ? "up " : "down ")
+            + Money.Rupees(Math.Abs(heroVal))
+            + ", " + Math.Abs(heroPct).ToString("0.00", IN) + " percent");
+
         DrawDelta(invested, current);
 
         _rows.Clear();
@@ -814,7 +1052,8 @@ public partial class MainWindow : Window
                 AvgPrice = h.AvgPrice,
                 LastPrice = h.LastPrice,
                 AwaitingPrice = h.AwaitingPrice,
-                ApiPnl = h.ApiPnl
+                ApiPnl = h.ApiPnl,
+                History = _history.Series(h.Symbol)
             });
         }
 
@@ -959,6 +1198,15 @@ public partial class MainWindow : Window
 
         ToggleText.Text = _open ? "Hide" : "Holdings";
 
+        // The visible label is the state; the announced one is the action, which
+        // is what a button should promise.
+        System.Windows.Automation.AutomationProperties.SetName(
+            ToggleButton, _open ? "Hide holdings" : "Show holdings");
+        System.Windows.Automation.AutomationProperties.SetHelpText(
+            ToggleButton,
+            _open ? "Space or Enter to collapse the holdings list"
+                  : "Space or Enter to expand the holdings list");
+
         if (_open)
         {
             Pane.Visibility = Visibility.Visible;
@@ -1087,6 +1335,14 @@ public partial class MainWindow : Window
         StocksTab.Foreground = tab == "stocks" ? on : off;
         FundsTab.Foreground = tab == "funds" ? on : off;
 
+        // Which tab is showing is carried entirely by colour and the underline
+        // position. Neither survives to a screen reader, and these are Buttons
+        // rather than a TabControl, so there is no selection state to inherit.
+        System.Windows.Automation.AutomationProperties.SetItemStatus(
+            StocksTab, tab == "stocks" ? "selected" : "not selected");
+        System.Windows.Automation.AutomationProperties.SetItemStatus(
+            FundsTab, tab == "funds" ? "selected" : "not selected");
+
         var target = tab == "stocks" ? StocksTab : FundsTab;
         target.UpdateLayout();
         var x = target.TranslatePoint(new Point(0, 0), TabRow).X;
@@ -1127,8 +1383,35 @@ public partial class MainWindow : Window
         if (e.OriginalSource is not DependencyObject src) return;
 
         var row = FindRow(src);
+        if (row?.DataContext is HoldingViewModel vm) Copy(vm);
+    }
+
+    /// <summary>
+    /// Enter copies the focused row, the keyboard counterpart of clicking it.
+    /// Rows are ListBoxItems, so arrow keys already move between them; without
+    /// this, reaching a row by keyboard led nowhere.
+    ///
+    /// Handled here rather than in OnKey because this must only fire when a row
+    /// actually holds focus, and the window-level handler cannot see that
+    /// without reaching back into the list.
+    /// </summary>
+    private void RowKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space)) return;
+        if (e.OriginalSource is not DependencyObject src) return;
+
+        var row = FindRow(src);
         if (row?.DataContext is not HoldingViewModel vm) return;
 
+        Copy(vm);
+
+        // Stops OnKey seeing the same press and toggling the pane shut on top
+        // of the copy.
+        e.Handled = true;
+    }
+
+    private void Copy(HoldingViewModel vm)
+    {
         try
         {
             System.Windows.Clipboard.SetText(vm.RawSymbol);
@@ -1152,6 +1435,11 @@ public partial class MainWindow : Window
 
     // ==== Keyboard ======================================================
 
+    /// <summary>
+    /// Window-level shortcuts. These fire wherever focus happens to be, which
+    /// is what makes them shortcuts -- and is also why each one has to check
+    /// that it is not stealing a key its focused control needs.
+    /// </summary>
     private async void OnKey(object sender, KeyEventArgs e)
     {
         switch (e.Key)
@@ -1161,22 +1449,44 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
+            // Space and Enter are how a focused button is pressed. Swallowing
+            // them here meant activating the menu button ALSO collapsed the
+            // holdings pane -- one keystroke, two unrelated effects.
             case Key.Space:
-            case Key.Enter:
+            case Key.Enter when !FocusIsOnAControl():
                 Toggle();
                 e.Handled = true;
                 break;
 
-            case Key.R:
+            case Key.R when !FocusIsOnAControl():
                 await RefreshAsync(manual: true);
                 e.Handled = true;
                 break;
 
-            case Key.Tab:
+            // Tab was unconditionally consumed to flip between Stocks and
+            // Funds, which killed focus traversal outright and made the focus
+            // rings unreachable by the only input that can show them. The tab
+            // switch keeps Tab only while focus sits on the tab row itself,
+            // where "next tab" is the obvious reading; everywhere else Tab
+            // moves focus, as it must.
+            case Key.Tab when FocusIsOnTabRow():
                 SwitchTab(_state.Tab == "stocks" ? "funds" : "stocks");
                 e.Handled = true;
                 break;
         }
+    }
+
+    /// <summary>
+    /// True when a focusable control owns the keyboard, and so owns keys like
+    /// Space and Enter. The window itself holding focus is not a control.
+    /// </summary>
+    private static bool FocusIsOnAControl() =>
+        System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.Control;
+
+    private bool FocusIsOnTabRow()
+    {
+        var focused = System.Windows.Input.Keyboard.FocusedElement;
+        return focused == StocksTab || focused == FundsTab;
     }
 
     // ==== Menu ==========================================================
@@ -1303,11 +1613,202 @@ public partial class MainWindow
     /// Reads the auto-refresh interval from WidgetState. Returns 0 to disable,
     /// or a positive integer (minutes) for the refresh cadence. Default: 5 min.
     /// </summary>
-    private int GetAutoRefreshIntervalMinutes()
+    // ==== Accounts ======================================================
+
+    /// <summary>
+    /// The stored accounts and which one is active, for the tray menu. Copied
+    /// out rather than handing over the live list, since the menu is built on
+    /// the WinForms side.
+    /// </summary>
+    public AccountsView AccountsSnapshot()
     {
-        // For now, use a hardcoded default. This can be moved to WidgetState
-        // and exposed in SettingsWindow later if users want configurability.
-        return 5; // minutes
+        var list = new List<AccountRef>();
+        foreach (var a in _state.Accounts)
+        {
+            list.Add(new AccountRef
+            {
+                Id = a.Id,
+                Name = string.IsNullOrWhiteSpace(a.Name) ? a.Id : a.Name
+            });
+        }
+        return new AccountsView(list, _state.ResolvedAccountId);
+    }
+
+    /// <summary>
+    /// Records the signed-in account so it can appear in the switcher. Called
+    /// after a successful auth, when KiteService has the profile in hand.
+    /// </summary>
+    private void RememberActiveAccount()
+    {
+        var id = _kite.UserId;
+        if (string.IsNullOrWhiteSpace(id)) return;
+
+        var changed = _state.UpsertAccount(id, _kite.UserName);
+
+        if (_state.ActiveAccountId != id && _kite.AccountId == id)
+        {
+            _state.ActiveAccountId = id;
+            changed = true;
+        }
+
+        if (changed) _state.Save();
+    }
+
+    /// <summary>
+    /// Points the widget at a different stored account: new vault, new client,
+    /// fresh portfolio. The old client is disposed so its sockets do not leak
+    /// across switches.
+    /// </summary>
+    public async Task SwitchAccountAsync(string? accountId)
+    {
+        if (_state.ActiveAccountId == accountId) return;
+
+        _state.ActiveAccountId = accountId;
+        _state.Save();
+
+        // Flush the outgoing account's points before repointing, or the switch
+        // discards whatever this session had accumulated for it.
+        _history.Save();
+
+        _kite.Dispose();
+        _kite = new KiteService(accountId);
+        _vault = new CredentialVault(accountId: accountId);
+        _history = new PriceHistoryService(accountId: accountId);
+        _backfilled = false;
+
+        Log.Info("Switched to account {AccountId}", accountId ?? "(default)");
+
+        _portfolio = null;
+        _rows.Clear();
+        ShowSkeleton();
+
+        // A different account means different credentials, so the sign-in state
+        // has to be re-established rather than assumed.
+        if (await _kite.IsAuthenticatedAsync())
+        {
+            await RefreshAsync();
+        }
+        else
+        {
+            ShowLogin("Sign in to this account to load its portfolio.");
+        }
+    }
+
+    /// <summary>
+    /// Adds an account. The vault folder is named for the Kite user id, which
+    /// is only known after signing in, so credentials are first written to a
+    /// staging folder and the directory is renamed once Kite tells us who it
+    /// belongs to. Cancelling leaves the staging folder, which the next add
+    /// reuses -- no orphan accumulates.
+    /// </summary>
+    public async Task AddAccountAsync()
+    {
+        const string staging = "pending";
+
+        _kite.Dispose();
+        _history.Save();
+
+        _kite = new KiteService(staging);
+        _vault = new CredentialVault(accountId: staging);
+        _history = new PriceHistoryService(accountId: staging);
+        _backfilled = false;
+        _state.ActiveAccountId = staging;
+        _state.Save();
+
+        _portfolio = null;
+        _rows.Clear();
+        ShowSkeleton();
+
+        OpenSettings();
+
+        if (!await _kite.IsAuthenticatedAsync())
+        {
+            ShowLogin("Sign in to finish adding this account.");
+            return;
+        }
+
+        PromoteStagedAccount(staging);
+        await RefreshAsync();
+    }
+
+    /// <summary>
+    /// Renames the staging vault to the real Kite user id now that it is known,
+    /// and points the widget at it.
+    /// </summary>
+    private void PromoteStagedAccount(string staging)
+    {
+        var id = _kite.UserId;
+        if (string.IsNullOrWhiteSpace(id) || id == staging) return;
+
+        try
+        {
+            var root = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "KiteGlance", "accounts");
+
+            var from = System.IO.Path.Combine(root, staging);
+            var to = System.IO.Path.Combine(root, id);
+
+            if (System.IO.Directory.Exists(from) && !System.IO.Directory.Exists(to))
+            {
+                System.IO.Directory.Move(from, to);
+            }
+
+            _kite.Dispose();
+            _kite = new KiteService(id);
+            _vault = new CredentialVault(accountId: id);
+
+            // The history file lived inside the folder just renamed, so it has
+            // moved with it; only the object needs repointing.
+            _history = new PriceHistoryService(accountId: id);
+        }
+        catch (Exception ex)
+        {
+            // Keep the staging vault rather than losing the credentials just
+            // entered; the account still works, it is just named "pending".
+            Log.Error(ex, "Could not rename staged account to {AccountId}", id);
+            return;
+        }
+
+        _state.UpsertAccount(id, _kite.UserName);
+        _state.ActiveAccountId = id;
+        _state.Save();
+    }
+
+    private int GetAutoRefreshIntervalMinutes() => _state.EffectiveRefreshIntervalMinutes;
+
+    /// <summary>
+    /// Rebuilds the auto-refresh timer after the interval changes in Settings,
+    /// so a new cadence takes effect without restarting the app. An interval of
+    /// 0 disables auto-refresh and leaves only manual refresh.
+    /// </summary>
+    public void ApplyRefreshInterval()
+    {
+        _autoRefreshTimer?.Stop();
+        _autoRefreshTimer?.Dispose();
+        _autoRefreshTimer = null;
+
+        var minutes = GetAutoRefreshIntervalMinutes();
+        if (minutes <= 0)
+        {
+            Log.Info("Auto-refresh disabled by user setting");
+            return;
+        }
+
+        _autoRefreshTimer = new System.Timers.Timer(minutes * 60_000)
+        {
+            AutoReset = true,
+            Enabled = true
+        };
+        _autoRefreshTimer.Elapsed += async (_, _) =>
+        {
+            if (MarketOpen() && Overlay.Visibility != Visibility.Visible)
+            {
+                await Dispatcher.InvokeAsync(async () => await RefreshAsync(manual: false));
+            }
+        };
+
+        Log.Info("Auto-refresh every {Minutes} minute(s)", minutes);
     }
 }
 

@@ -19,6 +19,15 @@ public enum PinMode
     Desktop
 }
 
+public enum ThemeMode
+{
+    /// <summary>Follows the Windows app theme, and changes with it. The default.</summary>
+    System,
+
+    Dark,
+    Light
+}
+
 public enum BackdropMode
 {
     /// <summary>Dawn, day, dusk, night -- follows the clock. The default.</summary>
@@ -56,10 +65,52 @@ public sealed class WidgetState
     public PinMode Pin { get; set; } = PinMode.Desktop;
     public BackdropMode Backdrop { get; set; } = BackdropMode.TimeOfDay;
 
+    /// <summary>
+    /// Which palette to paint with. Defaults to following Windows, so a user
+    /// who has never opened Settings gets the theme they already asked the OS
+    /// for rather than whichever one we happened to build first.
+    ///
+    /// The enum is declared here, not beside the Theme service: this file is
+    /// compiled into the plain-net8.0 test assembly, and anything reaching into
+    /// System.Windows from here would drag WPF onto it.
+    /// </summary>
+    public ThemeMode Theme { get; set; } = ThemeMode.System;
+
     /// <summary>Absolute path of the user-chosen image (Custom mode only).
     /// Points inside %APPDATA%\KiteGlance, where we copy the picked file, so
     /// the backdrop survives the original being moved or deleted.</summary>
     public string? CustomBackdropPath { get; set; }
+
+    /// <summary>
+    /// Known accounts, in the order they were added. Empty means the original
+    /// single-account layout: credentials at the root of %APPDATA%\KiteGlance
+    /// and no account switcher in the menu. Adding a second account migrates
+    /// the existing vault into the list rather than moving any files.
+    /// </summary>
+    public List<AccountRef> Accounts { get; set; } = new();
+
+    /// <summary>Id of the account currently displayed, or null for the legacy
+    /// single-account vault.</summary>
+    public string? ActiveAccountId { get; set; }
+
+    /// <summary>
+    /// Minutes between automatic refreshes during market hours. 0 disables
+    /// auto-refresh entirely, leaving manual R / tray refresh. Clamped on read,
+    /// so a hand-edited file cannot set a value that hammers the Kite API.
+    /// </summary>
+    public int RefreshIntervalMinutes { get; set; } = 5;
+
+    /// <summary>Smallest interval we will honour, to stay well inside Kite's
+    /// rate limits even if the file says otherwise.</summary>
+    public const int MinRefreshIntervalMinutes = 1;
+    public const int MaxRefreshIntervalMinutes = 60;
+
+    /// <summary>The stored interval, bounded. 0 stays 0 (disabled).</summary>
+    [JsonIgnore]
+    public int EffectiveRefreshIntervalMinutes =>
+        RefreshIntervalMinutes <= 0
+            ? 0
+            : Math.Clamp(RefreshIntervalMinutes, MinRefreshIntervalMinutes, MaxRefreshIntervalMinutes);
 
     private static readonly JsonSerializerOptions Opts = new()
     {
@@ -88,11 +139,144 @@ public sealed class WidgetState
         {
             var dir = System.IO.Path.GetDirectoryName(Path_)!;
             Directory.CreateDirectory(dir);
-            File.WriteAllText(Path_, JsonSerializer.Serialize(this, Opts));
+
+            // Write-then-replace. A direct WriteAllText that is interrupted --
+            // power loss, or the process being killed mid-write, and Save runs
+            // on every window move -- leaves truncated JSON, which Load then
+            // discards, silently resetting position, tab, pin mode and
+            // backdrop. Replacing an already-complete temp file is atomic.
+            var tmp = Path_ + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, Opts));
+
+            if (File.Exists(Path_))
+            {
+                File.Replace(tmp, Path_, destinationBackupFileName: null);
+            }
+            else
+            {
+                File.Move(tmp, Path_);
+            }
         }
         catch
         {
             // Losing window position is not worth crashing over.
         }
     }
+
+    /// <summary>
+    /// Forces the saved position back onto a screen that currently exists.
+    /// Unplugging the monitor the widget was parked on would otherwise restore
+    /// it to coordinates no display covers -- the app runs, is invisible, and
+    /// offers no way back. Also rejects NaN/Infinity from a hand-edited file,
+    /// which would throw inside WPF layout.
+    /// </summary>
+    public void ClampToVisibleArea(double virtualLeft, double virtualTop,
+                                   double virtualWidth, double virtualHeight,
+                                   double windowWidth, double windowHeight)
+    {
+        if (Left is null || Top is null) return;
+
+        if (!IsUsable(Left.Value) || !IsUsable(Top.Value))
+        {
+            Left = null;
+            Top = null;
+            return;
+        }
+
+        // Keep at least a strip of the widget on screen so it can be grabbed.
+        const double margin = 48;
+        var maxLeft = virtualLeft + virtualWidth - margin;
+        var maxTop = virtualTop + virtualHeight - margin;
+        var minLeft = virtualLeft - (windowWidth - margin);
+        var minTop = virtualTop;
+
+        Left = Math.Clamp(Left.Value, minLeft, maxLeft);
+        Top = Math.Clamp(Top.Value, minTop, maxTop);
+    }
+
+    private static bool IsUsable(double v) => !double.IsNaN(v) && !double.IsInfinity(v);
+
+    // -- Accounts --------------------------------------------------------
+
+    /// <summary>True once more than one account exists, which is when the
+    /// switcher is worth showing at all.</summary>
+    [JsonIgnore]
+    public bool HasMultipleAccounts => Accounts.Count > 1;
+
+    /// <summary>
+    /// The account to read credentials for. Falls back to the legacy root
+    /// vault when the list is empty or the stored id no longer resolves --
+    /// deleting an account's folder by hand must not leave the app pointing at
+    /// nothing.
+    /// </summary>
+    [JsonIgnore]
+    public string? ResolvedAccountId
+    {
+        get
+        {
+            if (Accounts.Count == 0) return null;
+
+            foreach (var a in Accounts)
+            {
+                if (a.Id == ActiveAccountId) return a.Id;
+            }
+
+            return Accounts[0].Id;
+        }
+    }
+
+    /// <summary>
+    /// Records an account, or refreshes the display name of one already known.
+    /// Returns true when the list changed and the caller should save.
+    /// </summary>
+    public bool UpsertAccount(string id, string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return false;
+
+        foreach (var existing in Accounts)
+        {
+            if (existing.Id != id) continue;
+
+            if (!string.IsNullOrWhiteSpace(displayName) && existing.Name != displayName)
+            {
+                existing.Name = displayName;
+                return true;
+            }
+            return false;
+        }
+
+        Accounts.Add(new AccountRef { Id = id, Name = displayName ?? id });
+        return true;
+    }
+}
+
+/// <summary>
+/// The account list handed to the tray menu: a copy of the stored accounts
+/// plus whichever is active. A named type rather than a tuple so the
+/// pre-flight validator can see the method's return type.
+/// </summary>
+public sealed class AccountsView
+{
+    public AccountsView(List<AccountRef> accounts, string? activeId)
+    {
+        Accounts = accounts;
+        ActiveId = activeId;
+    }
+
+    public List<AccountRef> Accounts { get; }
+    public string? ActiveId { get; }
+}
+
+/// <summary>
+/// A Zerodha login the widget knows about. Only the id and a display name are
+/// stored here -- credentials live in that account's own encrypted vault, never
+/// in this plain-JSON file.
+/// </summary>
+public sealed class AccountRef
+{
+    /// <summary>Kite user id, e.g. "AB1234". Also the vault folder name.</summary>
+    public string Id { get; set; } = "";
+
+    /// <summary>Human-readable label for the menu; defaults to the id.</summary>
+    public string Name { get; set; } = "";
 }

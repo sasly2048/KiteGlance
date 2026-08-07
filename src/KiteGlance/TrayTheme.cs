@@ -28,13 +28,39 @@ namespace KiteGlance;
 /// </summary>
 internal sealed class TrayTheme : ToolStripRenderer
 {
-    private static readonly Color Surface = Color.FromArgb(0xF2, 0x1A, 0x1C, 0x20);
-    private static readonly Color Edge = Color.FromArgb(0x2A, 0x2F, 0x36);
-    private static readonly Color Hover = Color.FromArgb(0x26, 0x2B, 0x32);
-    private static readonly Color Text = Color.FromArgb(0xF2, 0xF4, 0xF5);
-    private static readonly Color Dim = Color.FromArgb(0x8A, 0x90, 0x99);
-    private static readonly Color Rule = Color.FromArgb(0x25, 0x2A, 0x30);
-    private static readonly Color Accent = Color.FromArgb(0x0A, 0x84, 0xFF);
+    // This menu is drawn with GDI+, not WPF, so it cannot read the WPF palette
+    // and keeps its own pair of themes. Properties rather than fields: the tray
+    // menu is rebuilt on every open, and a field would hold whichever theme was
+    // current when the class was first touched.
+    private static bool Light => Services.Theme.IsLight;
+
+    private static Color Surface => Light
+        ? Color.FromArgb(0xF7, 0xFF, 0xFF, 0xFF)
+        : Color.FromArgb(0xF2, 0x1A, 0x1C, 0x20);
+
+    private static Color Edge => Light
+        ? Color.FromArgb(0xD8, 0xD8, 0xDC)
+        : Color.FromArgb(0x2A, 0x2F, 0x36);
+
+    private static Color Hover => Light
+        ? Color.FromArgb(0xEC, 0xEC, 0xF0)
+        : Color.FromArgb(0x26, 0x2B, 0x32);
+
+    private static Color Text => Light
+        ? Color.FromArgb(0x1A, 0x1C, 0x20)
+        : Color.FromArgb(0xF2, 0xF4, 0xF5);
+
+    private static Color Dim => Light
+        ? Color.FromArgb(0x8A, 0x8A, 0x8E)
+        : Color.FromArgb(0x8A, 0x90, 0x99);
+
+    private static Color Rule => Light
+        ? Color.FromArgb(0xE3, 0xE3, 0xE7)
+        : Color.FromArgb(0x25, 0x2A, 0x30);
+
+    private static Color Accent => Light
+        ? Color.FromArgb(0x00, 0x7A, 0xFF)
+        : Color.FromArgb(0x0A, 0x84, 0xFF);
 
     public static void Apply(ToolStripDropDownMenu menu)
     {

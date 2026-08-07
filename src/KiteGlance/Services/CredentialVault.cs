@@ -17,18 +17,57 @@ public class CredentialVault
     private readonly string _credPath;
     private readonly string _tokenPath;
     private readonly string _keyPath;
+    private readonly bool _isDefaultAccount;
 
-            public CredentialVault(string? baseDirectory = null)
-            {
-        _dir = Path.Combine(
-                            baseDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "KiteGlance");
+    /// <summary>
+    /// Opens the vault. <paramref name="accountId"/> selects one of several
+    /// stored accounts; null or empty means the original single-account layout
+    /// at the root of %APPDATA%\KiteGlance, which is what every existing
+    /// install has, so upgrading changes nothing until a second account is
+    /// added.
+    /// </summary>
+    public CredentialVault(string? baseDirectory = null, string? accountId = null)
+    {
+        _isDefaultAccount = string.IsNullOrWhiteSpace(accountId);
+        _dir = AccountDirectory(baseDirectory, accountId);
 
         Directory.CreateDirectory(_dir);
 
         _credPath = Path.Combine(_dir, "vault.bin");
         _tokenPath = Path.Combine(_dir, "token.bin");
         _keyPath = Path.Combine(_dir, "vault.key");
+    }
+
+    /// <summary>
+    /// The folder holding one account's per-account files. Shared with any
+    /// other service that stores something per account, so exactly one place
+    /// decides how an account id becomes a path.
+    /// </summary>
+    public static string AccountDirectory(string? baseDirectory, string? accountId)
+    {
+        var root = Path.Combine(
+            baseDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "KiteGlance");
+
+        return string.IsNullOrWhiteSpace(accountId)
+            ? root
+            : Path.Combine(root, "accounts", Sanitize(accountId));
+    }
+
+    /// <summary>
+    /// Kite user ids are alphanumeric, but the id reaches us from an API
+    /// response and is about to become a directory name -- so anything that
+    /// could climb out of the accounts folder is replaced rather than trusted.
+    /// </summary>
+    private static string Sanitize(string accountId)
+    {
+        var sb = new StringBuilder(accountId.Length);
+        foreach (var c in accountId)
+        {
+            sb.Append(char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_');
+        }
+
+        return sb.Length == 0 ? "default" : sb.ToString();
     }
 
     // -- Credentials -----------------------------------------------
@@ -51,11 +90,18 @@ public class CredentialVault
         // running from source keep credentials in a local .env / user-level
         // env var instead of typing them into the Settings dialog each time --
         // see .env.example. Nothing here is ever hardcoded or committed.
-        var envKey = Environment.GetEnvironmentVariable("KITE_API_KEY");
-        var envSecret = Environment.GetEnvironmentVariable("KITE_API_SECRET");
+        // Applies to the default (single-account) vault only. With several
+        // accounts configured, one pair of environment variables cannot stand
+        // for all of them, and silently returning the same credentials for
+        // every account would be worse than ignoring them.
+        if (_isDefaultAccount)
+        {
+            var envKey = Environment.GetEnvironmentVariable("KITE_API_KEY");
+            var envSecret = Environment.GetEnvironmentVariable("KITE_API_SECRET");
 
-        if (!string.IsNullOrWhiteSpace(envKey) && !string.IsNullOrWhiteSpace(envSecret))
-            return (envKey, envSecret);
+            if (!string.IsNullOrWhiteSpace(envKey) && !string.IsNullOrWhiteSpace(envSecret))
+                return (envKey, envSecret);
+        }
 
         var json = Read(_credPath);
         if (json is null) return (null, null);
@@ -137,27 +183,89 @@ public class CredentialVault
     // user isolation, but keeps the vault functional everywhere. The key is
     // generated once per machine/user profile and stored alongside the
     // encrypted files.
+    // Blob layout: [magic 'K','G','1'][12-byte nonce][ciphertext][16-byte tag].
+    // The magic distinguishes an authenticated GCM blob from the older
+    // unauthenticated CBC format, which is still readable so an existing vault
+    // survives the upgrade.
+    private static readonly byte[] GcmMagic = { (byte)'K', (byte)'G', (byte)'1' };
+    private const int GcmNonceSize = 12;
+    private const int GcmTagSize = 16;
+
     private byte[] ProtectPortable(byte[] plaintext)
     {
-        using var aes = Aes.Create();
-        aes.Key = GetOrCreatePortableKey();
-        aes.GenerateIV();
+        var key = GetOrCreatePortableKey();
 
-        using var encryptor = aes.CreateEncryptor();
-        var cipher = encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
+        var nonce = RandomNumberGenerator.GetBytes(GcmNonceSize);
+        var cipher = new byte[plaintext.Length];
+        var tag = new byte[GcmTagSize];
 
-        var result = new byte[aes.IV.Length + cipher.Length];
-        Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
-        Buffer.BlockCopy(cipher, 0, result, aes.IV.Length, cipher.Length);
+        using (var gcm = new AesGcm(key, GcmTagSize))
+        {
+            gcm.Encrypt(nonce, plaintext, cipher, tag);
+        }
+
+        var result = new byte[GcmMagic.Length + nonce.Length + cipher.Length + tag.Length];
+        var offset = 0;
+        Buffer.BlockCopy(GcmMagic, 0, result, offset, GcmMagic.Length); offset += GcmMagic.Length;
+        Buffer.BlockCopy(nonce, 0, result, offset, nonce.Length); offset += nonce.Length;
+        Buffer.BlockCopy(cipher, 0, result, offset, cipher.Length); offset += cipher.Length;
+        Buffer.BlockCopy(tag, 0, result, offset, tag.Length);
         return result;
     }
 
     private byte[] UnprotectPortable(byte[] blob)
     {
+        if (!HasGcmMagic(blob))
+        {
+            // Pre-GCM vault written by an older build. Read it so the user is
+            // not silently logged out; the next save re-writes it as GCM.
+            return UnprotectLegacyCbc(blob);
+        }
+
+        var minimum = GcmMagic.Length + GcmNonceSize + GcmTagSize;
+        if (blob.Length < minimum)
+            throw new CryptographicException("Vault blob is truncated.");
+
+        var nonce = new byte[GcmNonceSize];
+        var cipherLength = blob.Length - minimum;
+        var cipher = new byte[cipherLength];
+        var tag = new byte[GcmTagSize];
+
+        var offset = GcmMagic.Length;
+        Buffer.BlockCopy(blob, offset, nonce, 0, GcmNonceSize); offset += GcmNonceSize;
+        Buffer.BlockCopy(blob, offset, cipher, 0, cipherLength); offset += cipherLength;
+        Buffer.BlockCopy(blob, offset, tag, 0, GcmTagSize);
+
+        var plaintext = new byte[cipherLength];
+        using var gcm = new AesGcm(GetOrCreatePortableKey(), GcmTagSize);
+
+        // Throws CryptographicException if the tag does not verify. Unlike the
+        // CBC version this cannot return attacker-chosen garbage that then gets
+        // sent to Kite as an API key.
+        gcm.Decrypt(nonce, cipher, tag, plaintext);
+        return plaintext;
+    }
+
+    private static bool HasGcmMagic(byte[] blob)
+    {
+        if (blob.Length < GcmMagic.Length) return false;
+        for (var i = 0; i < GcmMagic.Length; i++)
+        {
+            if (blob[i] != GcmMagic[i]) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Reads a blob written before the move to AES-GCM.</summary>
+    private byte[] UnprotectLegacyCbc(byte[] blob)
+    {
         using var aes = Aes.Create();
         aes.Key = GetOrCreatePortableKey();
 
-        var ivLength = aes.IV.Length;
+        var ivLength = aes.BlockSize / 8;
+        if (blob.Length <= ivLength)
+            throw new CryptographicException("Legacy vault blob is truncated.");
+
         var iv = new byte[ivLength];
         Buffer.BlockCopy(blob, 0, iv, 0, ivLength);
         aes.IV = iv;
@@ -166,19 +274,47 @@ public class CredentialVault
         return decryptor.TransformFinalBlock(blob, ivLength, blob.Length - ivLength);
     }
 
+    // Guards key creation across processes. Two concurrent saves used to race
+    // File.Exists, both generate a key, and both write -- the loser's blob then
+    // decrypted with a key that no longer existed on disk, permanently losing
+    // the stored credentials.
+    private static readonly object KeyGate = new();
+
     private byte[] GetOrCreatePortableKey()
     {
-        if (File.Exists(_keyPath))
+        lock (KeyGate)
         {
-            return Convert.FromBase64String(File.ReadAllText(_keyPath).Trim());
+            if (File.Exists(_keyPath))
+            {
+                return Convert.FromBase64String(File.ReadAllText(_keyPath).Trim());
+            }
+
+            var key = RandomNumberGenerator.GetBytes(32);   // AES-256
+            File.WriteAllText(_keyPath, Convert.ToBase64String(key));
+            RestrictToCurrentUser(_keyPath);
+            return key;
         }
+    }
 
-        using var aes = Aes.Create();
-        aes.KeySize = 256;
-        aes.GenerateKey();
-
-        File.WriteAllText(_keyPath, Convert.ToBase64String(aes.Key));
-        return aes.Key;
+    /// <summary>
+    /// Removes group/other access from the key file. On Windows the vault is
+    /// DPAPI-protected and this path is unused; on Linux/macOS the key sits
+    /// beside the ciphertext, so mode 600 is the only thing separating the two.
+    /// </summary>
+    private static void RestrictToCurrentUser(string path)
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+        catch
+        {
+            // Best-effort: a filesystem that cannot represent the mode (a
+            // mounted share) must not stop the app from starting.
+        }
     }
 
     private class Creds

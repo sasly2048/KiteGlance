@@ -51,6 +51,10 @@ public partial class App : System.Windows.Application
 
         Log.Info("Startup");
 
+        // Before the first window is built, so it opens already painted in the
+        // right palette rather than flashing dark and correcting itself.
+        Theme.Apply(State.WidgetState.Load().Theme);
+
         _widget = new MainWindow();
         _manager = new WidgetManager(_widget);
 

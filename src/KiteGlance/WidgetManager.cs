@@ -122,6 +122,13 @@ public class WidgetManager : IDisposable
         menu.Items.Add(startup);
 
         menu.Items.Add(new ToolStripSeparator());
+
+        // Populated on Opening: accounts are added and renamed while the app
+        // runs, so a list built once at construction would go stale.
+        var accounts = new ToolStripMenuItem("Accounts");
+        menu.Items.Add(accounts);
+
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit Kite Glance", null, (_, _) => Application.Current.Shutdown());
 
         // Reflect live state each time it opens, rather than trusting a snapshot
@@ -135,9 +142,49 @@ public class WidgetManager : IDisposable
             pinFree.Checked = mode == PinMode.Normal;
 
             startup.Checked = IsAutostartEnabled();
+
+            PopulateAccounts(accounts);
         };
 
         return menu;
+    }
+
+    /// <summary>
+    /// Rebuilds the Accounts submenu: one checkable entry per stored account,
+    /// then "Add account". A single-account install still sees the menu, so
+    /// adding a second one is discoverable.
+    /// </summary>
+    private void PopulateAccounts(ToolStripMenuItem parent)
+    {
+        parent.DropDownItems.Clear();
+
+        var view = _widget.Dispatcher.Invoke(() => _widget.AccountsSnapshot());
+        var accounts = view.Accounts;
+
+        foreach (var account in accounts)
+        {
+            var item = new ToolStripMenuItem(account.Name)
+            {
+                Checked = account.Id == view.ActiveId,
+                Tag = account.Id
+            };
+            item.Click += async (s, _) =>
+            {
+                var target = (string?)((ToolStripMenuItem)s!).Tag;
+                await _widget.Dispatcher.InvokeAsync(async () =>
+                    await _widget.SwitchAccountAsync(target));
+            };
+            parent.DropDownItems.Add(item);
+        }
+
+        if (accounts.Count > 0)
+        {
+            parent.DropDownItems.Add(new ToolStripSeparator());
+        }
+
+        parent.DropDownItems.Add("Add account...", null, async (_, _) =>
+            await _widget.Dispatcher.InvokeAsync(async () =>
+                await _widget.AddAccountAsync()));
     }
 
     private void Reveal()

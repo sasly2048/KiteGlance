@@ -45,6 +45,7 @@
     <Compile Include="../../src/KiteGlance/Services/KiteService.cs" Link="KiteService.cs" />
     <Compile Include="../../src/KiteGlance/State/WidgetState.cs" Link="WidgetState.cs" />
     <Compile Include="../../src/KiteGlance/Services/Log.cs" Link="Log.cs" />
+    <Compile Include="../../src/KiteGlance/Services/PriceHistoryService.cs" Link="PriceHistoryService.cs" />
   </ItemGroup>
 
 </Project>

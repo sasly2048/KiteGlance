@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Kite Glance"
-        Width="400" Height="342"
+        Width="400" Height="478"
         WindowStyle="None"
         AllowsTransparency="False"
         Background="Transparent"
@@ -14,10 +14,10 @@
         TextOptions.TextRenderingMode="ClearType"
         FontFamily="Segoe UI Variable Text, Segoe UI">
 
-    <Grid Background="{StaticResource Scrim}">
+    <Grid Background="{DynamicResource Scrim}">
 
         <Border Height="1" VerticalAlignment="Top"
-                Background="{StaticResource TopSheen}"
+                Background="{DynamicResource TopSheen}"
                 IsHitTestVisible="False" />
 
         <StackPanel Margin="26,20,26,22">
@@ -26,7 +26,7 @@
                 <TextBlock Text="Settings"
                            FontFamily="Segoe UI Variable Display, Segoe UI"
                            FontSize="15" FontWeight="SemiBold"
-                           Foreground="{StaticResource Label}"
+                           Foreground="{DynamicResource Label}"
                            VerticalAlignment="Center" />
                 <Button x:Name="CloseButton" Content="&#10005;"
                         Style="{StaticResource IconButton}"
@@ -34,25 +34,49 @@
             </Grid>
 
             <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="19"
-                       Foreground="{StaticResource Label2}"
+                       Foreground="{DynamicResource Label2}"
                        Margin="0,12,0,20">
                 Create an app at <Run FontWeight="SemiBold"
-                    Foreground="{StaticResource Label}">developers.kite.trade</Run>,
+                    Foreground="{DynamicResource Label}">developers.kite.trade</Run>,
                 then set its Redirect URL to<LineBreak />
                 <Run FontFamily="Cascadia Mono, Consolas" FontSize="11.5"
-                     Foreground="{StaticResource Blue}">http://127.0.0.1:5173/callback</Run>
+                     Foreground="{DynamicResource Blue}">http://127.0.0.1:5173/callback</Run>
             </TextBlock>
 
             <TextBlock Text="API key" FontSize="11" FontWeight="Medium"
-                       Foreground="{StaticResource Label3}" Margin="1,0,0,6" />
+                       Foreground="{DynamicResource Label3}" Margin="1,0,0,6" />
             <TextBox x:Name="KeyBox" Style="{StaticResource Input}" />
 
             <TextBlock Text="API secret" FontSize="11" FontWeight="Medium"
-                       Foreground="{StaticResource Label3}" Margin="1,14,0,6" />
+                       Foreground="{DynamicResource Label3}" Margin="1,14,0,6" />
             <PasswordBox x:Name="SecretBox" Style="{StaticResource Secret}" />
 
+            <TextBlock Text="Auto-refresh" FontSize="11" FontWeight="Medium"
+                       Foreground="{DynamicResource Label3}" Margin="1,14,0,6" />
+            <ComboBox x:Name="IntervalBox"
+                      Style="{StaticResource IntervalPicker}"
+                      SelectedValuePath="Tag">
+                <ComboBoxItem Content="Every minute" Tag="1" />
+                <ComboBoxItem Content="Every 2 minutes" Tag="2" />
+                <ComboBoxItem Content="Every 5 minutes" Tag="5" />
+                <ComboBoxItem Content="Every 15 minutes" Tag="15" />
+                <ComboBoxItem Content="Every 30 minutes" Tag="30" />
+                <ComboBoxItem Content="Every hour" Tag="60" />
+                <ComboBoxItem Content="Off (manual only)" Tag="0" />
+            </ComboBox>
+
+            <TextBlock Text="Appearance" FontSize="11" FontWeight="Medium"
+                       Foreground="{DynamicResource Label3}" Margin="1,14,0,6" />
+            <ComboBox x:Name="ThemeBox"
+                      Style="{StaticResource IntervalPicker}"
+                      SelectedValuePath="Tag">
+                <ComboBoxItem Content="Match Windows" Tag="System" />
+                <ComboBoxItem Content="Dark" Tag="Dark" />
+                <ComboBoxItem Content="Light" Tag="Light" />
+            </ComboBox>
+
             <TextBlock x:Name="ErrorText" FontSize="11.5"
-                       Foreground="{StaticResource Red}"
+                       Foreground="{DynamicResource Red}"
                        Margin="1,11,0,0" Visibility="Collapsed"
                        TextWrapping="Wrap" />
 
@@ -62,7 +86,7 @@
 
             <TextBlock FontSize="10.5" Margin="0,13,0,0"
                        TextAlignment="Center"
-                       Foreground="{StaticResource Label4}"
+                       Foreground="{DynamicResource Label4}"
                        Text="Encrypted with Windows DPAPI. Stays on this device." />
         </StackPanel>
     </Grid>

@@ -41,6 +41,53 @@ public class AmfiNavServiceTests : IDisposable
         Assert.Equal(98.76m, result["INF090I01LK7"]);
     }
 
+    /// <summary>
+    /// A truncated five-field row has the date at index 4. The old guard was
+    /// `parts.Length &lt; 5`, which admitted it and parsed the date as a price.
+    /// </summary>
+    [Fact]
+    public void Parse_rejects_five_field_row_rather_than_reading_the_date_as_a_nav()
+    {
+        const string truncated = @"Scheme Code;ISIN Growth;ISIN Reinvest;Name;NAV;Date
+120503;INF846K01EW2;INF846K01EX0;HDFC Balanced Advantage Fund;28-Jul-2025";
+
+        var result = AmfiNavService.Parse(truncated);
+
+        Assert.Empty(result);
+    }
+
+    /// <summary>
+    /// A scheme name containing a semicolon shifts every later column. Reading
+    /// the NAV as a fixed index 4 would pick up a name fragment; reading it as
+    /// the second-from-last column stays correct.
+    /// </summary>
+    [Fact]
+    public void Parse_handles_semicolon_inside_scheme_name()
+    {
+        const string awkward = @"Scheme Code;ISIN Growth;ISIN Reinvest;Name;NAV;Date
+120503;INF846K01EW2;INF846K01EX0;HDFC Fund - Direct; Growth Option;45.67;28-Jul-2025";
+
+        var result = AmfiNavService.Parse(awkward);
+
+        Assert.Equal(45.67m, result["INF846K01EW2"]);
+    }
+
+    /// <summary>
+    /// Guards the exact figure a real row yields, so an index change that
+    /// happens to still parse *something* numeric cannot pass silently.
+    /// </summary>
+    [Fact]
+    public void Parse_reads_the_nav_column_not_an_adjacent_one()
+    {
+        const string row = @"Scheme Code;ISIN Growth;ISIN Reinvest;Name;NAV;Date
+120503;INF846K01EW2;INF846K01EX0;Some Fund;45.67;28-Jul-2025";
+
+        var result = AmfiNavService.Parse(row);
+
+        Assert.Equal(45.67m, result["INF846K01EW2"]);
+        Assert.DoesNotContain(result.Values, v => v == 120503m);
+    }
+
     [Fact]
     public void Parse_skips_invalid_rows()
     {
