@@ -189,6 +189,7 @@ public class WidgetStateTests
         state.UpsertAccount("AB1234", "Ada");
         state.UpsertAccount("CD5678", "Grace");
         state.ActiveAccountId = "CD5678";
+        state.VaultProbe = _ => true;
 
         Assert.Equal("CD5678", state.ResolvedAccountId);
         Assert.True(state.HasMultipleAccounts);
@@ -204,7 +205,58 @@ public class WidgetStateTests
         var state = new WidgetState();
         state.UpsertAccount("AB1234", "Ada");
         state.ActiveAccountId = "GONE999";
+        state.VaultProbe = _ => true;
 
         Assert.Equal("AB1234", state.ResolvedAccountId);
+    }
+
+    /// <summary>
+    /// The regression that broke sign-in.
+    ///
+    /// Signing in on a single-account install records the Kite user id purely
+    /// to label the account. The credentials stay in the root vault. Treating a
+    /// non-empty account list as proof that accounts\&lt;id&gt;\ exists sent the
+    /// app to an empty folder, where it found no API key, built a login URL
+    /// with an empty api_key, and Kite answered with an error page. Nothing was
+    /// lost -- the app had simply stopped looking at the right vault.
+    /// </summary>
+    [Fact]
+    public void A_labelled_account_with_no_vault_still_reads_the_root_vault()
+    {
+        var state = new WidgetState();
+        state.UpsertAccount("TLV026", "Guda Raghavendra Sujith");
+        state.VaultProbe = _ => false;   // the folder exists but holds no vault
+
+        Assert.Null(state.ResolvedAccountId);
+    }
+
+    /// <summary>
+    /// Once the account genuinely has its own vault, it must be used -- the
+    /// guard above must not disable multi-account entirely.
+    /// </summary>
+    [Fact]
+    public void An_account_with_its_own_vault_is_used()
+    {
+        var state = new WidgetState();
+        state.UpsertAccount("TLV026", "Sujith");
+        state.VaultProbe = id => id == "TLV026";
+
+        Assert.Equal("TLV026", state.ResolvedAccountId);
+    }
+
+    /// <summary>
+    /// Mixed case: the active account has no vault, so rather than reading some
+    /// other account's credentials the widget falls back to the root vault.
+    /// </summary>
+    [Fact]
+    public void An_active_account_missing_its_vault_falls_back_to_the_root()
+    {
+        var state = new WidgetState();
+        state.UpsertAccount("AB1234", "Ada");
+        state.UpsertAccount("CD5678", "Grace");
+        state.ActiveAccountId = "CD5678";
+        state.VaultProbe = id => id == "AB1234";   // only Ada has one
+
+        Assert.Null(state.ResolvedAccountId);
     }
 }

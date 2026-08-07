@@ -204,10 +204,18 @@ public sealed class WidgetState
     public bool HasMultipleAccounts => Accounts.Count > 1;
 
     /// <summary>
-    /// The account to read credentials for. Falls back to the legacy root
-    /// vault when the list is empty or the stored id no longer resolves --
-    /// deleting an account's folder by hand must not leave the app pointing at
-    /// nothing.
+    /// The account to read credentials for, or null for the original vault at
+    /// the root of %APPDATA%\KiteGlance.
+    ///
+    /// Null is returned whenever the resolved account has no vault directory of
+    /// its own. That case is not hypothetical: signing in on a single-account
+    /// install records the Kite user id here purely to label the account, and
+    /// treating a non-empty list as proof that account folders exist pointed
+    /// the app at an empty directory. It then read no API key, built a login
+    /// URL with an empty api_key, and Kite answered with an error page -- the
+    /// credentials were never lost, just no longer being looked at.
+    ///
+    /// Also covers an account folder deleted by hand.
     /// </summary>
     [JsonIgnore]
     public string? ResolvedAccountId
@@ -216,13 +224,61 @@ public sealed class WidgetState
         {
             if (Accounts.Count == 0) return null;
 
+            var chosen = Accounts[0].Id;
+
             foreach (var a in Accounts)
             {
-                if (a.Id == ActiveAccountId) return a.Id;
+                if (a.Id == ActiveAccountId)
+                {
+                    chosen = a.Id;
+                    break;
+                }
             }
 
-            return Accounts[0].Id;
+            return HasVault(chosen) ? chosen : null;
         }
+    }
+
+    /// <summary>
+    /// True when this account has its own credential file. Injectable so the
+    /// rule can be tested without writing to the real %APPDATA%.
+    /// </summary>
+    [JsonIgnore]
+    public Func<string, bool>? VaultProbe { get; set; }
+
+    private bool HasVault(string? accountId)
+    {
+        if (string.IsNullOrWhiteSpace(accountId)) return false;
+        if (VaultProbe is not null) return VaultProbe(accountId);
+
+        try
+        {
+            var path = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "KiteGlance", "accounts", Sanitize(accountId), "vault.bin");
+
+            return File.Exists(path);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Mirrors CredentialVault's own sanitizer. Duplicated rather than shared
+    /// because this file is compiled into the plain-net8.0 test assembly and
+    /// must not depend on the service layer.
+    /// </summary>
+    private static string Sanitize(string accountId)
+    {
+        var sb = new System.Text.StringBuilder(accountId.Length);
+        foreach (var c in accountId)
+        {
+            sb.Append(char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_');
+        }
+
+        return sb.Length == 0 ? "default" : sb.ToString();
     }
 
     /// <summary>
