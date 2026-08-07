@@ -118,6 +118,15 @@ public partial class MainWindow : Window
             Dispatcher.Invoke(ApplyHighContrast);
         };
 
+        // Windows' own light/dark switch. WPF predates that setting and does
+        // not surface it, so it arrives as a General preference change and the
+        // registry has to be re-read. This matters most for the default mode:
+        // a user who never opens Settings is exactly the one who would
+        // otherwise watch Windows go light while the widget stayed dark.
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
+        Closed += (_, _) =>
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemPreferenceChanged;
+
         // The sync label ages in place: "just now" becomes "2m ago" without
         // needing a refresh to make it true. The same tick re-evaluates the
         // backdrop, so dusk arrives on time without its own timer.
@@ -328,6 +337,35 @@ public partial class MainWindow : Window
     /// A change crossfades over ~1.2s -- dusk should arrive the way it does
     /// outside, not like a slide projector.
     /// </summary>
+    /// <summary>
+    /// Repaints when Windows' own theme changes, but only while the user has
+    /// asked us to follow it. Someone who explicitly picked Dark or Light has
+    /// overridden the OS, and quietly switching out from under them would
+    /// discard that choice.
+    /// </summary>
+    private void OnSystemPreferenceChanged(
+        object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category != Microsoft.Win32.UserPreferenceCategory.General) return;
+        if (_state.Theme != ThemeMode.System) return;
+
+        Dispatcher.Invoke(() =>
+        {
+            // General fires for several unrelated preferences, so this lands
+            // more often than the theme actually changes. Bail unless the
+            // resolved theme really differs, or every stray notification would
+            // rebuild the palette and reload a backdrop image.
+            if (Services.Theme.IsLight == Services.Theme.WindowsPrefersLight()) return;
+
+            Services.Theme.Apply(ThemeMode.System);
+            _backdropCurrent = null;
+            ApplyBackdrop(instant: true);
+
+            Log.Info("Followed Windows theme change to {Theme}",
+                Services.Theme.IsLight ? "Light" : "Dark");
+        });
+    }
+
     /// <summary>
     /// High contrast is a request for legibility over decoration, so in that
     /// mode the decoration comes off: the photographic backdrop, the grain
