@@ -5,6 +5,89 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Sparkline per holding. Real daily candles from Kite's historical endpoint
+  where the account has the paid subscription; otherwise a rolling series
+  accumulated from the prices each refresh already fetches, so the line works
+  on any account and covers mutual funds, which that endpoint cannot serve.
+  Scaled per row against its own range, and coloured by the series' own
+  direction rather than total P&L -- a holding can be up overall while the
+  last few days ran down.
+- Multiple Zerodha accounts. Each gets its own encrypted vault and price
+  history under `accounts\<user-id>\`; switch from the tray menu. Existing
+  single-account installs keep their current paths and behave as before.
+- Light theme, with the palette split into swappable dictionaries and every
+  usage converted to `DynamicResource`. Follows the Windows app theme by
+  default and repaints live, including when Windows itself is switched. The
+  eight backdrops are dark-tuned raster art, so light mode tints them rather
+  than shipping a second set.
+- Configurable auto-refresh interval (1-60 minutes, or off) in Settings.
+  Previously listed as a completed feature while the getter returned a
+  hardcoded 5, with a comment admitting it.
+- Structured logging: message templates, captured properties, and a
+  JSON-lines sink alongside the human-readable log -- without taking on
+  Serilog, so the no-external-dependencies rule still holds.
+- Accessibility. There were no `AutomationProperties` at all. The hero
+  figure and each holding row are now announced as sentences rather than
+  loose numbers, the market-open pulse and the amber "cannot reach Kite" dot
+  have text equivalents where previously they were conveyed by animation and
+  colour alone, rows are reachable and copyable by keyboard, and high
+  contrast drops the decorative layers that fight it.
+
+### Fixed
+
+- Fund NAV staleness could never be reported. The stale-disk-cache path set
+  `HasLiveNavs = true`, so the "NAVs are delayed" banner never fired --
+  directly contradicting the documented "honest about staleness" behaviour.
+- AMFI NAV parsing read the wrong field. The guard admitted 5-field rows and
+  took index 4, but fund names contain semicolons, so on those rows that
+  index is a fragment of the name rather than the NAV.
+- Day P&L disagreed with the Kite app. The change was multiplied by
+  `quantity + t1_quantity`, but Kite computes `day_change` against settled
+  quantity only, so shares bought today were credited a full day's move.
+- A transient gateway error logged you out. The JSON deserialize ran before
+  the status check, so an HTML 502 threw `JsonException`, which
+  `IsAuthenticatedAsync`'s blanket catch read as "not authenticated".
+- Tampered credentials were decrypted into garbage and sent to Kite as an
+  API key. The non-Windows fallback used unauthenticated CBC; it is now
+  AES-GCM, which rejects modified ciphertext. Existing vaults still read.
+- The portable key file was world-readable, and two concurrent saves could
+  each generate a key -- permanently orphaning whichever lost.
+- Settings could be silently reset. `WidgetState.Save` was a direct
+  `WriteAllText`, and it runs on every window move, so an interruption left
+  truncated JSON that `Load` discarded. Now write-then-replace.
+- A saved position on a monitor that no longer exists left the widget
+  invisible with no way back; coordinates are now clamped onto a live screen.
+- `Tab` was unconditionally consumed to switch tabs, which disabled focus
+  traversal entirely and made the focus rings unreachable by the only input
+  that can show them. It now switches tabs only from the tab row.
+- Pressing a focused button also collapsed the holdings pane, because
+  `Space`/`Enter` were handled at the window regardless of focus.
+- Holdings virtualization had never taken effect: the rows sat in an
+  `ItemsControl` inside an external `ScrollViewer`, which measures at
+  infinite height, so every row was realized on every refresh.
+- Rounding disagreed with Kite by ₹1 on exact halves (banker's rounding).
+- `Numeral.Reset` mutated the list the frame callback was indexing, with no
+  lock and no thread-affinity check.
+- The loopback login server could truncate the request token when the HTTP
+  request arrived split across TCP segments, surfacing as an opaque
+  checksum failure.
+- `HttpClient` and `SemaphoreSlim` instances were never disposed, which
+  leaked a socket handle per account switch.
+- A persistent AMFI outage left no trace in the log, silently degrading
+  every fund's valuation.
+
+### Changed
+
+- README corrected against the source: five backdrop filenames did not
+  exist, the architecture section listed two test files and "31+ tests"
+  against an actual nine and 108, the tray and widget menus were described
+  as interchangeable when neither is a superset of the other, and the
+  credential section omitted the non-Windows encryption path entirely.
+
 ## [1.4.0] - 2026-08-28
 
 ### Added
