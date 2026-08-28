@@ -80,6 +80,42 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - A persistent AMFI outage left no trace in the log, silently degrading
   every fund's valuation.
 
+### Security
+
+- The Settings window decrypted and displayed the API secret in cleartext
+  on every open. The secret field now starts empty and an empty save means
+  "keep what is already stored"; the API key, which is not sensitive, is
+  still echoed for editing.
+- The hourly session-check timer fired an unconditional `/user/profile`
+  call on top of every auto-refresh, doubling the API quota burned by
+  anyone with a sub-hour interval. Removed; a 401 on the next refresh
+  already surfaces session expiry through the existing login overlay.
+- `WidgetManager` ran its own 60-minute `System.Timers.Timer` alongside
+  the user-configurable auto-refresh. Two refreshes per long interval,
+  each racing the other through the refresh gate. Removed; the widget's
+  own timer is the single source of refreshes.
+- The single-instance mutex was always released on exit, including from
+  a second-instance run that had never owned it. Now releases only when
+  the first-instance path acquired it.
+- `SystemParameters.StaticPropertyChanged` and `SystemEvents.User
+  PreferenceChanged` handlers were attached in the constructor with no
+  removal path; the widget's `Closing` is cancelled (Hide, not exit), so
+  `Closed` never fired. Handlers and the three `System.Timers.Timer`
+  instances are now released from `App.OnExit` via a static
+  `MainWindow.ShutdownAll`.
+- `Space` fell through into `case Key.Enter when !FocusIsOnAControl()`
+  with the `when` guard not re-evaluated, so a focused TextBox would
+  still toggle the holdings pane on space. The `when` guard now applies
+  to both keys.
+
+### Diagnostics
+
+- `WidgetState.Load`, `WidgetState.Save`, `PriceHistoryService.Load`, and
+  `CredentialVault.Read` swallowed every exception silently. A
+  half-written state file, a corrupt price-history file, and a tampered
+  vault now each leave a `WARN` line so the next "my preferences reset"
+  or "my sparkline disappeared" report has a cause to point at.
+
 ### Changed
 
 - README corrected against the source: five backdrop filenames did not

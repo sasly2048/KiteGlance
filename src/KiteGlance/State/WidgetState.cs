@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using KiteGlance.Services;
 
 namespace KiteGlance.State;
 
@@ -127,8 +128,14 @@ public sealed class WidgetState
             var json = File.ReadAllText(Path_);
             return JsonSerializer.Deserialize<WidgetState>(json, Opts) ?? new WidgetState();
         }
-        catch
+        catch (Exception ex)
         {
+            // A corrupt state file silently resetting every preference to its
+            // default is the kind of bug that wastes hours to diagnose. The
+            // disk write is write-then-replace, so a half-written file here
+            // means a power loss or kill mid-save, not a transient IO blip.
+            Log.Warn("state.json unreadable ({Error}); falling back to defaults",
+                ex.GetType().Name);
             return new WidgetState();
         }
     }
@@ -157,9 +164,12 @@ public sealed class WidgetState
                 File.Move(tmp, Path_);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Losing window position is not worth crashing over.
+            // Losing window position is not worth crashing over, but it is
+            // worth a line in the log so the next "the widget forgets where
+            // it lives" report has something to point at.
+            Log.Warn("state.json save failed ({Error})", ex.GetType().Name);
         }
     }
 

@@ -12,6 +12,7 @@ public partial class App : System.Windows.Application
     private const string InstanceKey = "KiteGlance.SingleInstance.v1";
 
     private Mutex? _instance;
+    private bool _ownsMutex;
     private MainWindow? _widget;
     private WidgetManager? _manager;
 
@@ -39,6 +40,7 @@ public partial class App : System.Windows.Application
         };
 
         _instance = new Mutex(initiallyOwned: true, InstanceKey, out var isFirst);
+        _ownsMutex = isFirst;
 
         if (!isFirst)
         {
@@ -67,9 +69,23 @@ public partial class App : System.Windows.Application
         Log.Info("Shutdown");
         _manager?.Dispose();
 
+        // The widget's Closing is cancelled, so its Closed never fires. Reach
+        // into MainWindow directly to release the SystemParameters and
+        // SystemEvents subscriptions and stop its timers, all of which would
+        // otherwise live for the lifetime of the process.
+        KiteGlance.MainWindow.ShutdownAll();
+
         if (_instance is not null)
         {
-            try { _instance.ReleaseMutex(); } catch { /* not owned */ }
+            // Only the first instance ever owned the mutex -- `initiallyOwned:
+            // true` does not give ownership to the opener of an existing named
+            // mutex, even briefly. Releasing one we did not own throws
+            // ApplicationException, which we treat as harmless.
+            if (_ownsMutex)
+            {
+                try { _instance.ReleaseMutex(); }
+                catch { /* race against another releaser */ }
+            }
             _instance.Dispose();
         }
 

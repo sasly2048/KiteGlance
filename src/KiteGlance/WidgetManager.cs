@@ -7,17 +7,16 @@ using Application = System.Windows.Application;
 
 namespace KiteGlance;
 
-/// <summary>Tray presence, the refresh clock, and start-with-Windows.</summary>
+/// <summary>Tray presence and start-with-Windows. Auto-refresh lives on the
+/// widget itself, configurable from Settings, so there is no second clock
+/// here firing on its own cadence.</summary>
 public class WidgetManager : IDisposable
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string AppName = "KiteGlance";
 
-    private static readonly TimeSpan RefreshEvery = TimeSpan.FromMinutes(60);
-
     private readonly MainWindow _widget;
     private readonly NotifyIcon _tray;
-    private readonly System.Timers.Timer _clock;
 
     public WidgetManager(MainWindow widget)
     {
@@ -40,19 +39,6 @@ public class WidgetManager : IDisposable
             e.Cancel = true;
             _widget.Hide();
         };
-
-        _clock = new System.Timers.Timer(RefreshEvery.TotalMilliseconds)
-        {
-            AutoReset = true
-        };
-        _clock.Elapsed += async (_, _) =>
-        {
-            // Holdings don't move when the market is shut. Don't spend a call.
-            if (!MainWindow.MarketOpen()) return;
-
-            await _widget.Dispatcher.InvokeAsync(async () => await _widget.RefreshAsync());
-        };
-        _clock.Start();
     }
 
     /// <summary>
@@ -231,9 +217,6 @@ public class WidgetManager : IDisposable
 
     public void Dispose()
     {
-        _clock.Stop();
-        _clock.Dispose();
-
         _tray.Visible = false;   // otherwise a ghost icon lingers until hover
         _tray.Dispose();
     }

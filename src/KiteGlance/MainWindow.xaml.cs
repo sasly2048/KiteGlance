@@ -61,7 +61,6 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<HoldingViewModel> _rows = new();
     private PriceHistoryService _history;
     private bool _backfilled;
-    private System.Timers.Timer? _sessionCheckTimer;
     private System.Timers.Timer? _autoRefreshTimer;
 
     private PortfolioData? _portfolio;
@@ -75,9 +74,16 @@ public partial class MainWindow : Window
     private Storyboard? _breath;
     private System.Windows.Threading.DispatcherTimer? _ticker;
 
+    // Stored as a field so the SystemParameters handler can be removed on
+    // shutdown. The widget's Closing is cancelled (Hide, not exit), so Closed
+    // never fires during the app's lifetime; cleanup is driven by App.OnExit
+    // through a static callback registered in the constructor.
+    private System.ComponentModel.PropertyChangedEventHandler? _onStaticPropertyChanged;
+
     public MainWindow()
     {
         InitializeComponent();
+        Live.Add(this);
 
         // Opened against whichever account is active. With no accounts
         // configured this resolves to null and reads the original root vault,
@@ -112,20 +118,21 @@ public partial class MainWindow : Window
 
         // High contrast can be switched on mid-session (Left Alt + Left Shift +
         // Print Screen), so it is watched rather than read once at startup.
-        SystemParameters.StaticPropertyChanged += (_, e) =>
+        _onStaticPropertyChanged = (_, e) =>
         {
             if (e.PropertyName != nameof(SystemParameters.HighContrast)) return;
             Dispatcher.Invoke(ApplyHighContrast);
         };
+        SystemParameters.StaticPropertyChanged += _onStaticPropertyChanged;
 
         // Windows' own light/dark switch. WPF predates that setting and does
         // not surface it, so it arrives as a General preference change and the
         // registry has to be re-read. This matters most for the default mode:
         // a user who never opens Settings is exactly the one who would
         // otherwise watch Windows go light while the widget stayed dark.
+        // Released by ReleaseOnExit -- the widget's Closing is cancelled, so
+        // Closed never fires during normal shutdown.
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
-        Closed += (_, _) =>
-            Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemPreferenceChanged;
 
         // The sync label ages in place: "just now" becomes "2m ago" without
         // needing a refresh to make it true. The same tick re-evaluates the
@@ -141,23 +148,12 @@ public partial class MainWindow : Window
         };
         _ticker.Start();
 
-        // Session expiry check: Kite sessions expire daily. Check every hour
-        // during market hours to minimize API calls while catching expirations.
-        // This runs independently of the auto-refresh timer below.
-        _sessionCheckTimer = new System.Timers.Timer(TimeSpan.FromHours(1).TotalMilliseconds)
-        {
-            AutoReset = true,
-            Enabled = true
-        };
-        _sessionCheckTimer.Elapsed += async (_, _) =>
-        {
-            await Dispatcher.InvokeAsync(async () => await CheckSessionAsync());
-        };
-        _sessionCheckTimer.Start();
-
         // Auto-refresh during market hours, at the interval the user chose in
         // Settings. Built here and rebuilt on change, so both paths share one
-        // definition.
+        // definition. The same refresh that pulls today's prices also catches
+        // a 401, so no separate hourly session check is needed -- a redundant
+        // /user/profile round-trip every hour would double the API calls
+        // without changing the outcome.
         ApplyRefreshInterval();
     }
 
@@ -695,35 +691,6 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Periodic session check: if authenticated but no portfolio loaded, refresh.
-    /// If auth expired, show login overlay without waiting for user action.
-    /// </summary>
-    private async Task CheckSessionAsync()
-    {
-        // Skip if market is closed - sessions don't matter then
-        if (!MarketOpen()) return;
-
-        var (key, secret) = _vault.GetCredentials();
-        if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(secret))
-            return; // Not configured yet
-
-        var isAuthenticated = await _kite.IsAuthenticatedAsync();
-
-        if (!isAuthenticated)
-        {
-            // Session expired - show login prompt
-            await Dispatcher.InvokeAsync(() => ShowLogin("Your session expired. Sign in again."));
-            return;
-        }
-
-        // Still authenticated but no data? Auto-refresh silently
-        if (_portfolio == null && Overlay.Visibility != Visibility.Visible)
-        {
-            await RefreshAsync();
-        }
-    }
-
     // ==== Refresh =======================================================
 
     public async Task RefreshAsync(bool manual = false)
@@ -741,6 +708,13 @@ public partial class MainWindow : Window
         try
         {
             _portfolio = await _kite.GetPortfolioAsync();
+
+            // _syncedAt marks the LAST SUCCESSFUL refresh -- not the last
+            // attempt. The catch blocks below leave it untouched so the
+            // "stale Xm ago" label still points at the last good numbers, and
+            // PaintSyncLabel falls back to "can't reach Kite" when we have
+            // never once succeeded. UpdatePriceHistoryAsync is best-effort
+            // and does not affect this.
             _syncedAt = DateTime.Now;
 
             await UpdatePriceHistoryAsync(_portfolio);
@@ -1340,6 +1314,43 @@ public partial class MainWindow : Window
     private FrameworkElement? Container(int i) =>
         HoldingsList.ItemContainerGenerator.ContainerFromIndex(i) as FrameworkElement;
 
+    // ==== Lifecycle =====================================================
+
+    /// <summary>
+    /// Every window registers itself so App.OnExit can release static
+    /// subscriptions (SystemParameters, SystemEvents) and stop timers that
+    /// the suppressed Closing handler would never release. The window's
+    /// Closing is cancelled, so Closed never fires during normal shutdown.
+    /// </summary>
+    private static readonly List<MainWindow> Live = new();
+
+    public static void ShutdownAll()
+    {
+        // Called by App.OnExit. The widget suppresses Closing (Hide, not
+        // exit) so its OnClosed would never run, which left two subscriptions
+        // and a couple of timers on the books for the process's lifetime.
+        for (var i = Live.Count - 1; i >= 0; i--)
+        {
+            Live[i].ReleaseOnExit();
+            Live.RemoveAt(i);
+        }
+    }
+
+    private void ReleaseOnExit()
+    {
+        if (_onStaticPropertyChanged is not null)
+        {
+            SystemParameters.StaticPropertyChanged -= _onStaticPropertyChanged;
+            _onStaticPropertyChanged = null;
+        }
+
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemPreferenceChanged;
+
+        _ticker?.Stop();
+        _autoRefreshTimer?.Stop();
+        _autoRefreshTimer?.Dispose();
+    }
+
     private void SwitchTab(string tab)
     {
         if (_state.Tab == tab) return;
@@ -1468,8 +1479,12 @@ public partial class MainWindow : Window
 
             // Space and Enter are how a focused button is pressed. Swallowing
             // them here meant activating the menu button ALSO collapsed the
-            // holdings pane -- one keystroke, two unrelated effects.
-            case Key.Space:
+            // holdings pane -- one keystroke, two unrelated effects. Each label
+            // carries its own `when` so the guard applies to both: in C#, a
+            // fall-through `case Key.Space:` into `case Key.Enter when ...` is
+            // bound to the new label without re-evaluating the guard, so
+            // Space would have toggled even with a TextBox focused.
+            case Key.Space when !FocusIsOnAControl():
             case Key.Enter when !FocusIsOnAControl():
                 Toggle();
                 e.Handled = true;
@@ -1616,20 +1631,6 @@ internal sealed class Debounce
 /// <summary>Cleanup for timers when the window closes.</summary>
 public partial class MainWindow
 {
-    protected override void OnClosed(EventArgs e)
-    {
-        _ticker?.Stop();
-        _sessionCheckTimer?.Stop();
-        _sessionCheckTimer?.Dispose();
-        _autoRefreshTimer?.Stop();
-        _autoRefreshTimer?.Dispose();
-        base.OnClosed(e);
-    }
-
-    /// <summary>
-    /// Reads the auto-refresh interval from WidgetState. Returns 0 to disable,
-    /// or a positive integer (minutes) for the refresh cadence. Default: 5 min.
-    /// </summary>
     // ==== Accounts ======================================================
 
     /// <summary>

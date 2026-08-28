@@ -170,10 +170,14 @@ public class CredentialVault
                 : UnprotectPortable(blob);
             return Encoding.UTF8.GetString(clear);
         }
-        catch
+        catch (Exception ex)
         {
             // Includes blobs written by a pre-entropy build: treat as absent,
-            // the user re-enters credentials once. Acceptable one-time cost.
+            // the user re-enters credentials once. Acceptable one-time cost --
+            // but the silent failure was swallowing tamper events and
+            // forgotten-entropy upgrades alike, both worth a line in the log.
+            Log.Warn("Vault blob unreadable ({Error}); user will re-enter credentials",
+                ex.GetType().Name);
             return null;
         }
     }

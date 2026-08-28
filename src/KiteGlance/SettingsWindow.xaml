@@ -50,6 +50,9 @@
             <TextBlock Text="API secret" FontSize="11" FontWeight="Medium"
                        Foreground="{DynamicResource Label3}" Margin="1,14,0,6" />
             <PasswordBox x:Name="SecretBox" Style="{StaticResource Secret}" />
+            <TextBlock Text="Leave blank to keep the stored secret."
+                       FontSize="10.5" Foreground="{DynamicResource Label4}"
+                       Margin="1,4,0,0" />
 
             <TextBlock Text="Auto-refresh" FontSize="11" FontWeight="Medium"
                        Foreground="{DynamicResource Label3}" Margin="1,14,0,6" />

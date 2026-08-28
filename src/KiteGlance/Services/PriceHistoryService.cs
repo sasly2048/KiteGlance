@@ -221,10 +221,14 @@ public sealed class PriceHistoryService
 
             return clean;
         }
-        catch
+        catch (Exception ex)
         {
-            // A sparkline is not worth a crash, nor worth a log line on every
-            // launch of a fresh install.
+            // A sparkline is not worth a crash, but a half-written file that
+            // silently throws away the last few days of price points is worth
+            // a line in the log so "the sparkline is gone" has a cause to
+            // attach to.
+            Log.Warn("history.json unreadable ({Error}); sparklines will restart",
+                ex.GetType().Name);
             return new Dictionary<string, List<decimal>>(StringComparer.Ordinal);
         }
     }

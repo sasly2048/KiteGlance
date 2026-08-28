@@ -37,9 +37,15 @@ public partial class SettingsWindow : Window
         CloseButton.Click += (_, _) => { DialogResult = false; Close(); };
         SaveButton.Click += (_, _) => Save();
 
-        var (key, secret) = _vault.GetCredentials();
+        // The API key is OK to show back -- it is already visible in the
+        // browser's address bar during the Kite redirect. The API secret is
+        // not: it is the second half of the credentials and never leaves the
+        // vault unless the user is actively editing it. Decrypting it on
+        // every open would put cleartext on screen for anyone walking past.
+        // Leave the field empty and treat empty-on-save as "keep existing".
+        var (key, _) = _vault.GetCredentials();
         KeyBox.Text = key ?? "";
-        SecretBox.Password = secret ?? "";
+        SecretBox.Password = "";
 
         SelectInterval(refreshIntervalMinutes);
         ThemeBox.SelectedValue = theme.ToString();
@@ -103,13 +109,34 @@ public partial class SettingsWindow : Window
     private void Save()
     {
         var key = KeyBox.Text.Trim();
-        var secret = SecretBox.Password.Trim();
+        var secretInput = SecretBox.Password;
 
-        if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(secret))
+        if (string.IsNullOrEmpty(key))
         {
-            ErrorText.Text = "Both the API key and secret are required.";
+            ErrorText.Text = "The API key is required.";
             ErrorText.Visibility = Visibility.Visible;
             return;
+        }
+
+        // The secret field starts empty on purpose: we never decrypt it just
+        // to show it back. An empty field means "keep what is already stored";
+        // a non-empty field means "replace it". Without this branch, the first
+        // Save after a successful setup would silently wipe the secret.
+        string secret;
+        if (string.IsNullOrEmpty(secretInput))
+        {
+            var (_, existing) = _vault.GetCredentials();
+            if (string.IsNullOrEmpty(existing))
+            {
+                ErrorText.Text = "The API secret is required.";
+                ErrorText.Visibility = Visibility.Visible;
+                return;
+            }
+            secret = existing;
+        }
+        else
+        {
+            secret = secretInput.Trim();
         }
 
         try
