@@ -74,9 +74,14 @@ public sealed class SpringEase : EasingFunctionBase
     protected override Freezable CreateInstanceCore() => new SpringEase();
 
     // ---- Presets -------------------------------------------------------
+    //
+    // Frozen on first use. The old code allocated a new SpringEase per call,
+    // which is harmless functionally but pointless: the parameters are
+    // constant, the easing curve is identical, and a SpringEase is a
+    // Freezable (a non-trivial object).
 
     /// <summary>Layout changes. Confident, a touch of overshoot.</summary>
-    public static SpringEase Layout() => Frozen(new SpringEase
+    public static SpringEase Layout() => CachedLayout ??= Frozen(new SpringEase
     {
         Stiffness = 170,
         Damping = 20,
@@ -84,7 +89,7 @@ public sealed class SpringEase : EasingFunctionBase
     });
 
     /// <summary>Entrances. Softer landing, no visible bounce.</summary>
-    public static SpringEase Gentle() => Frozen(new SpringEase
+    public static SpringEase Gentle() => CachedGentle ??= Frozen(new SpringEase
     {
         Stiffness = 130,
         Damping = 22,
@@ -92,12 +97,16 @@ public sealed class SpringEase : EasingFunctionBase
     });
 
     /// <summary>Taps and toggles. Snappy, immediate.</summary>
-    public static SpringEase Snap() => Frozen(new SpringEase
+    public static SpringEase Snap() => CachedSnap ??= Frozen(new SpringEase
     {
         Stiffness = 320,
         Damping = 24,
         EasingMode = EasingMode.EaseIn
     });
+
+    private static SpringEase? CachedLayout;
+    private static SpringEase? CachedGentle;
+    private static SpringEase? CachedSnap;
 
     private static SpringEase Frozen(SpringEase s)
     {

@@ -107,11 +107,18 @@ public class KiteService : IDisposable
         try
         {
             var profile = await GetAsync<UserProfileDto>("/user/profile");
-            if (profile is not null)
+            if (profile is null)
             {
-                UserId = profile.UserId;
-                UserName = profile.UserName;
+                // A 200 with no data is not a session. Kite's error responses
+                // still return 200, with status:"error" and data:null. The
+                // old code treated the absence of a thrown exception as
+                // proof of authentication, which kept the widget pointed at
+                // a token the API no longer recognises.
+                Log.Warn("/user/profile returned no data; session may be invalid");
+                return false;
             }
+            UserId = profile.UserId;
+            UserName = profile.UserName;
             return true;
         }
         catch
@@ -139,10 +146,21 @@ public class KiteService : IDisposable
         req.Headers.Add("X-Kite-Version", "3");
 
         var res = await _http.SendAsync(req);
-        var payload = await res.Content.ReadFromJsonAsync<KiteResponse<SessionData>>();
+
+        // Same tolerant parse as GetAsync: a gateway error returns HTML, and
+        // a raw JsonException here used to surface as a useless stack to the
+        // user. Fall through to the status check below, which reports the
+        // real failure (status code + Kite's own message if any).
+        var raw = await res.Content.ReadAsStringAsync();
+        KiteResponse<SessionData>? payload = null;
+        try
+        {
+            payload = System.Text.Json.JsonSerializer.Deserialize<KiteResponse<SessionData>>(raw);
+        }
+        catch (System.Text.Json.JsonException) { /* leave payload null */ }
 
         if (!res.IsSuccessStatusCode || payload?.Data?.AccessToken is null)
-            throw new Exception(payload?.Message ?? "Login failed. Check your API secret.");
+            throw new Exception(payload?.Message ?? $"Login failed ({(int)res.StatusCode}). Check your API secret.");
 
         AccessToken = payload.Data.AccessToken;
         _vault.SaveAccessToken(payload.Data.AccessToken);
@@ -434,9 +452,20 @@ public class KiteService : IDisposable
         }
         catch (Exception ex)
         {
-            // Overwhelmingly this is the 403 of an account with no historical
-            // subscription. Info, not Warn: nothing is broken and the fallback
-            // covers it.
+            // Three outcomes share this branch:
+            //   - 403: no Historical Data subscription (the common case)
+            //   - 5xx / network: transient
+            //   - any other HTTP failure
+            // All collapse to null because the caller cannot act differently
+            // on them: it will fall back to locally-accumulated prices either
+            // way. The first null aborts the rest of the loop (see
+            // BackfillHistoryAsync), so an unsubscribed account with 30
+            // holdings wastes 1 call, not 30.
+            //
+            // The trade-off: a single transient error during this run is
+            // remembered via _backfilled and not retried until next launch.
+            // That is acceptable -- the Kite endpoint barely changes intraday
+            // -- and the fallback is unaffected.
             Log.Info("Historical candles unavailable ({Error}); using local price history",
                 ex.GetType().Name);
             return null;

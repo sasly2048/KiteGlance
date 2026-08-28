@@ -62,6 +62,11 @@ internal sealed class TrayTheme : ToolStripRenderer
         ? Color.FromArgb(0x00, 0x7A, 0xFF)
         : Color.FromArgb(0x0A, 0x84, 0xFF);
 
+    // Constructed once and reused for every item's text render. A new Font
+    // per call (the old code) was a hot-path allocation, since each menu
+    // item re-renders on hover and on theme switch.
+    private static readonly Font ItemFont = new("Segoe UI", 9.25f, FontStyle.Regular);
+
     public static void Apply(ToolStripDropDownMenu menu)
     {
         menu.Renderer = new TrayTheme();
@@ -125,7 +130,7 @@ internal sealed class TrayTheme : ToolStripRenderer
     protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
     {
         e.TextColor = e.Item.Enabled ? Text : Dim;
-        e.TextFont = new Font("Segoe UI", 9.25f, FontStyle.Regular);
+        e.TextFont = ItemFont;
 
         // Leave room for the check column so labels don't jump when toggled.
         e.TextRectangle = new Rectangle(

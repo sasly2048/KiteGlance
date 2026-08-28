@@ -153,8 +153,7 @@
 
                             <TextBlock x:Name="SyncLabel" Text="" FontSize="11"
                                        Foreground="{DynamicResource Label3}"
-                                       VerticalAlignment="Center"
-                                       AutomationProperties.Name="Last synced" />
+                                       VerticalAlignment="Center" />
                         </StackPanel>
 
                         <Button x:Name="MenuButton" Style="{StaticResource IconButton}"

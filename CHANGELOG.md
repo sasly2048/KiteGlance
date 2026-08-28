@@ -116,6 +116,49 @@ and this project uses [Semantic Versioning](https://semver.org/).
   vault now each leave a `WARN` line so the next "my preferences reset"
   or "my sparkline disappeared" report has a cause to point at.
 
+### Re-audit
+
+Second pass, after a checklist-driven re-read of every source file
+against the security, correctness, performance, threading, error-handling,
+accessibility, resources, and tests dimensions. New findings:
+
+- `/user/profile` returning a 200 with `data: null` was treated as
+  authenticated. Kite's error responses return 200 with an empty data
+  block; the old code read "no thrown exception" as proof of a session.
+  Now an empty profile is a not-authenticated result, with a WARN line
+  pointing at the cause.
+- The login POST was using `ReadFromJsonAsync`, which throws
+  `JsonException` on a gateway HTML response. The session-check path
+  already tolerant-parses; the login path now does too, so a 502 during
+  sign-in shows a useful message instead of a raw stack.
+- The sync label had a static `AutomationProperties.Name="Last synced"`,
+  so a screen reader never heard the actual "just now" / "2m ago" /
+  "stale 5m" / "closed" string. Removed; the TextBlock's content is now
+  the announced name.
+- The tray menu created a new `Font` on every text render. Cached once
+  at type-init.
+- The spring-easing presets allocated a new `Freezable` per call. Cached
+  once and reused across animations (Freezables are safe to share when
+  frozen).
+- `GetDailyClosesAsync` collapses 403 (no subscription) and 5xx (transient)
+  to the same null result. The old comment acknowledged the trade-off
+  without explaining it; expanded the comment so the next reader
+  understands why a transient blip is remembered until next launch.
+
+Noted, not fixed (intentional or out of scope):
+
+- `GetAsync`/`AuthenticateAsync` do not `ConfigureAwait(false)`. They are
+  always called from the UI thread today; flagging for any future
+  background-thread caller.
+- `GetDailyClosesAsync` does not distinguish 403 from 5xx. Distinguishing
+  would require changing the return type to a discriminated result and
+  threading that through `BackfillHistoryAsync`; the current behavior
+  wastes at most 1 API call per app run on an unsubscribed account, which
+  is a smaller cost than the refactor.
+- `Log.Warn` includes `ex.GetType().Name` but never the full stack
+  unless Debug is on. Intentional: production logs stay readable; the
+  debug switch exposes the full trace.
+
 ### Changed
 
 - README corrected against the source: five backdrop filenames did not
