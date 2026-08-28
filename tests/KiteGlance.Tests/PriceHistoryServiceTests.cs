@@ -209,4 +209,162 @@ public class PriceHistoryServiceTests : IDisposable
         // trading made.
         Assert.Null(b.Series("INFY"));
     }
+
+    // ---- Resample ------------------------------------------------------
+
+    [Fact]
+    public void Resample_passes_through_when_source_is_at_or_below_target()
+    {
+        var source = new List<decimal> { 10, 20, 30 };
+        var result = PriceHistoryService.Resample(source, 5);
+        Assert.Equal(new[] { 10m, 20m, 30m }, result);
+    }
+
+    [Fact]
+    public void Resample_returns_exactly_target_count_for_a_dense_source()
+    {
+        // 1000 source points -> 40 targets; no off-by-one at either end.
+        var source = new List<decimal>();
+        for (var i = 0; i < 1000; i++) source.Add(i);
+        var result = PriceHistoryService.Resample(source, 40);
+        Assert.Equal(40, result.Count);
+    }
+
+    [Fact]
+    public void Resample_picks_the_first_and_last_when_targets_are_two()
+    {
+        // With 2 targets we should see points from near the start and near
+        // the end of the source, not the same one twice.
+        var source = new List<decimal>();
+        for (var i = 0; i < 100; i++) source.Add(i);
+        var result = PriceHistoryService.Resample(source, 2);
+
+        Assert.Equal(2, result.Count);
+        Assert.NotEqual(result[0], result[1]);
+        Assert.True(result[0] < result[1]);
+    }
+
+    [Fact]
+    public void Resample_is_strictly_monotonic_when_source_is()
+    {
+        // A strictly increasing source should still be strictly increasing
+        // after resampling, never the same point twice in a row.
+        var source = new List<decimal>();
+        for (var i = 0; i < 200; i++) source.Add(i);
+        var result = PriceHistoryService.Resample(source, 50);
+
+        for (var i = 1; i < result.Count; i++)
+            Assert.True(result[i] > result[i - 1], $"non-monotonic at index {i}");
+    }
+
+    // ---- SeedIntraday + frozen series ---------------------------------
+
+    [Fact]
+    public void SeedIntraday_down_samples_to_the_cap()
+    {
+        var history = New();
+        // 200 source points -> 40 in the series.
+        var source = new List<decimal>();
+        for (var i = 0; i < 200; i++) source.Add(100m + i);
+
+        history.SeedIntraday("INFY", source);
+
+        var series = history.Series("INFY");
+        Assert.NotNull(series);
+        Assert.Equal(PriceHistoryService.MaxPoints, series!.Count);
+
+        // Resample picks midpoints of each target bucket. With 200 source
+        // points downsampled to 40, the first picked point is index 2 (the
+        // midpoint of the 0..4 bucket that the first target slot maps to),
+        // and the last is index 197 (midpoint of the 195..199 bucket). The
+        // chart is symmetric around the middle, not biased toward either
+        // end.
+        Assert.Equal(102m, series[0]);
+        Assert.Equal(297m, series[^1]);
+    }
+
+    [Fact]
+    public void SeedIntraday_with_a_short_source_keeps_every_point()
+    {
+        var history = New();
+        var source = new List<decimal> { 100, 101, 102, 103, 104 };
+
+        history.SeedIntraday("INFY", source);
+
+        var series = history.Series("INFY");
+        Assert.Equal(source, series);
+    }
+
+    [Fact]
+    public void SeedIntraday_freezes_the_series_so_record_is_a_no_op()
+    {
+        var history = New();
+        var source = new List<decimal>();
+        for (var i = 0; i < 200; i++) source.Add(100m + i);
+
+        history.SeedIntraday("INFY", source);
+        var before = history.Series("INFY");
+        Assert.NotNull(before);
+
+        // Record must not append to a frozen series -- the latest 5-minute
+        // candle is the rightmost point, and a single non-aligned latest
+        // price would put a visible cliff on the chart.
+        history.Record("INFY", 9999m);
+        var after = history.Series("INFY");
+
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
+    public void Seed_also_freezes_the_series()
+    {
+        // The daily backfill path calls Seed, not SeedIntraday. It must
+        // freeze too, for the same reason: a single latest last_price must
+        // not be appended on top of a carefully assembled daily series.
+        var history = New();
+        var source = new List<decimal>();
+        for (var i = 0; i < PriceHistoryService.MaxPoints; i++) source.Add(100m + i);
+
+        history.Seed("INFY", source);
+        var before = history.Series("INFY");
+
+        history.Record("INFY", 9999m);
+        var after = history.Series("INFY");
+
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
+    public void Frozen_status_is_reported_for_seeded_but_not_recorded_series()
+    {
+        var history = New();
+        history.Record("INFY", 100);
+        Assert.False(history.IsFrozen("INFY"));
+
+        history.SeedIntraday("INFY", new List<decimal> { 100, 101, 102, 103, 104 });
+        Assert.True(history.IsFrozen("INFY"));
+    }
+
+    [Fact]
+    public void Retain_clears_frozen_status_for_removed_symbols()
+    {
+        var history = New();
+        history.SeedIntraday("INFY", new List<decimal> { 100, 101, 102, 103, 104 });
+        Assert.True(history.IsFrozen("INFY"));
+
+        history.Retain(Array.Empty<string>());
+        Assert.False(history.IsFrozen("INFY"));
+    }
+
+    [Fact]
+    public void SeedIntraday_is_a_no_op_for_null_or_empty_source()
+    {
+        var history = New();
+
+        history.SeedIntraday("INFY", null);
+        Assert.Null(history.Series("INFY"));
+
+        history.SeedIntraday("INFY", new List<decimal>());
+        Assert.Null(history.Series("INFY"));
+    }
 }

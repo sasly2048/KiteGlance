@@ -274,7 +274,7 @@ src/KiteGlance/
 │                              accounts / refresh interval (JSON)
 └── ViewModels/PortfolioViewModel.cs
 
-tests/KiteGlance.Tests/         108 tests, plain net8.0, no WPF
+tests/KiteGlance.Tests/         122 tests, plain net8.0, no WPF
 ├── KiteGlance.Tests.csproj    xUnit project; links the files under test
 ├── PnlMathTests.cs            P&L regression tests vs. real Coin figures
 ├── BackdropServiceTests.cs    Time-of-day / rotation boundary tests
@@ -323,7 +323,7 @@ git push origin v1.0.0
 - [x] ~~Auto-refresh portfolio data~~ (Implemented)
 - [x] ~~Configurable refresh interval~~ (Settings → Auto-refresh: 1–60 minutes, or off)
 - [x] ~~Session expiry handling~~ (Auto-detection every 1 hour)
-- [x] ~~Unit test coverage expansion~~ (108 tests across 9 files)
+- [x] ~~Unit test coverage expansion~~ (122 tests across 9 files)
 - [x] ~~Documentation improvements~~ (Security model, troubleshooting guides)
 - [x] ~~CI/CD enhancements~~ (Code coverage, cross-platform fixes)
 - [x] ~~Multi-account support~~ (Per-account vaults; switch from the tray menu)
@@ -339,7 +339,13 @@ git push origin v1.0.0
 ### Future Considerations
 - [ ] Light-mode backdrop art (light mode currently tints the dark-tuned images
       rather than shipping a second set)
-- [ ] Intraday sparkline resolution for users with a historical-data subscription
+- [x] ~~Intraday sparkline resolution for users with a historical-data subscription~~
+      (Implemented — Kite's `/instruments/historical/{token}/minute?interval=5`
+      endpoint is fetched on first backfill and down-sampled to the sparkline
+      width; the resulting series is frozen so per-refresh `last_price` doesn't
+      put a single non-aligned point on the right edge. Users on a tier that
+      doesn't include minute data fall through to the daily endpoint and then
+      to the local accumulator, as before.)
 
 Suggestions and contributions are welcome — see [CONTRIBUTING](CONTRIBUTING.md).
 

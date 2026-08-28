@@ -9,6 +9,15 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Intraday 5-minute sparklines for accounts with a Historical Data
+  subscription. The backfill path now asks Kite's
+  `/instruments/historical/{token}/minute?interval=5` endpoint first; a
+  successful response is down-sampled to the sparkline width (40 points)
+  and the resulting series is marked frozen, so the per-refresh
+  `last_price` no longer appends a single non-aligned point on the right
+  edge of a 5-minute chart. Tiers that don't include minute data fall
+  through to the existing daily endpoint, and from there to the local
+  accumulator -- nothing changes for unsubscribed users.
 - Sparkline per holding. Real daily candles from Kite's historical endpoint
   where the account has the paid subscription; otherwise a rolling series
   accumulated from the prices each refresh already fetches, so the line works

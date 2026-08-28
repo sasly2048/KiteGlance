@@ -791,7 +791,11 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Asks Kite for real daily candles for holdings whose local series is thin.
+    /// Asks Kite for candles, prefering 5-minute intraday (when the user pays
+    /// for that endpoint tier) and falling back to daily, then to the local
+    /// accumulator. The intraday path freezes the series so the per-refresh
+    /// <see cref="PriceHistoryService.Record"/> does not put a single latest
+    /// point on the right edge of a 5-minute chart.
     ///
     /// Runs once per app run, not per refresh: the answer barely changes
     /// intraday, the endpoint is rate-limited, and on the overwhelmingly common
@@ -806,10 +810,18 @@ public partial class MainWindow : Window
             if (h.InstrumentToken is not { } token) continue;   // funds have none
             if (_history.IsComplete(h.Symbol)) continue;
 
-            var closes = await _kite.GetDailyClosesAsync(token, PriceHistoryService.MaxPoints);
+            // Try the better-resolution endpoint first. A 403 (subscription
+            // tier doesn't include minute data) or any other failure is
+            // logged inside the call and surfaces as null, in which case we
+            // try daily, then stop -- the rest of the loop would also 403.
+            var intraday = await _kite.GetIntradayClosesAsync(token, intervalMinutes: 5, days: 2);
+            if (intraday is not null)
+            {
+                _history.SeedIntraday(h.Symbol, intraday);
+                continue;
+            }
 
-            // Null means no subscription (or the endpoint is unhappy). Either
-            // way it will be null for every other holding too.
+            var closes = await _kite.GetDailyClosesAsync(token, PriceHistoryService.MaxPoints);
             if (closes is null) return;
 
             _history.Seed(h.Symbol, closes);

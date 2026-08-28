@@ -473,12 +473,71 @@ public class KiteService : IDisposable
     }
 
     /// <summary>
-    /// Kite returns last_price = 0 for units it has not yet priced -- a fund
+    /// Intraday 5-minute candles for an instrument, oldest first, for the
+    /// sparkline when the user pays for the Historical Data subscription.
+    ///
+    /// Returns the raw candle list; <see cref="PriceHistoryService.SeedIntraday"/>
+    /// down-samples it to the sparkline width. Null on any failure
+    /// (subscription missing, transient error, malformed payload) so the
+    /// caller can fall back to <see cref="GetDailyClosesAsync"/>.
+    ///
+    /// Kite caps this endpoint at 2000 records. A 5-minute window of one
+    /// Indian trading day is ~75 candles, so 2 days fits comfortably.
+    /// </summary>
+    public async Task<List<decimal>?> GetIntradayClosesAsync(long instrumentToken, int intervalMinutes, int days)
+    {
+        if (instrumentToken <= 0 || days <= 0) return null;
+        if (intervalMinutes is not (1 or 3 or 5 or 10 or 15 or 30 or 60)) return null;
+
+        // Same calendar-day padding as the daily path: weekends and holidays
+        // return no candle, so a bare `days` window under-fills.
+        var to = DateTime.Now.Date;
+        var from = to.AddDays(-(days * 7 / 5 + 2));
+
+        var path = $"/instruments/historical/{instrumentToken}/minute"
+                   + $"?interval={intervalMinutes}"
+                   + $"&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}";
+
+        try
+        {
+            var data = await GetAsync<HistoricalDataDto>(path);
+            if (data?.Candles is null) return null;
+
+            var closes = new List<decimal>(data.Candles.Count);
+
+            foreach (var candle in data.Candles)
+            {
+                if (candle.Count < 5) continue;
+                if (candle[4].ValueKind != System.Text.Json.JsonValueKind.Number) continue;
+                if (!candle[4].TryGetDecimal(out var close)) continue;
+                if (close > 0) closes.Add(close);
+            }
+
+            return closes.Count > 0 ? closes : null;
+        }
+        catch (KiteAuthException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Same collapse as GetDailyClosesAsync: 403 (no subscription tier
+            // that includes minute data), 5xx, malformed payload. The caller
+            // can fall through to the daily endpoint and then to the local
+            // accumulator, so null is the right answer.
+            Log.Info("Intraday candles unavailable ({Error}); trying daily",
+                ex.GetType().Name);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Kite returns last_price = 0 for units they have not yet priced -- a fund
     /// ordered but not allotted, or a NAV that has not published today.
     ///
     /// Reading that as "the asset is worth nothing" is how you invent a 100%
     /// loss out of thin air and poison the portfolio total. The honest read is
-    /// "unknown, so hold it at cost": P&L of zero, and the row says so.
+    /// "unknown, so hold it cost": P&L of zero, and the row says so.
     /// </summary>
     private static decimal Priced(decimal last, decimal avg, out bool awaiting)
     {
