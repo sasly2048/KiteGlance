@@ -57,11 +57,28 @@ public partial class App : System.Windows.Application
         // right palette rather than flashing dark and correcting itself.
         Theme.Apply(State.WidgetState.Load().Theme);
 
-        _widget = new MainWindow();
-        _manager = new WidgetManager(_widget);
+        // Construction can throw (XAML parse failure already at design time,
+        // an HWND-creation Win32Exception in the field). If it does, we own a
+        // named mutex: leaving it held would force the next launch to see an
+        // abandoned mutex and trip an AbandonedMutexException in the user.
+        // Release and dispose on any path out of OnStartup, and shut down so
+        // the process does not linger with a half-built UI.
+        try
+        {
+            _widget = new MainWindow();
+            _manager = new WidgetManager(_widget);
 
-        _widget.Show();
-        _ = _widget.BootAsync();
+            _widget.Show();
+            _ = _widget.BootAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Startup failed; releasing mutex and exiting", ex);
+            try { _instance.ReleaseMutex(); } catch { /* not held anymore */ }
+            _instance.Dispose();
+            _instance = null;
+            Shutdown(1);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

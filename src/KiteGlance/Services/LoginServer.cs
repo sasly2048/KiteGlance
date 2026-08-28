@@ -125,9 +125,14 @@ public static class LoginServer
                     $"Content-Length: {body.Length}\r\n" +
                     "Connection: close\r\n\r\n");
 
-                await stream.WriteAsync(head, cts.Token);
-                await stream.WriteAsync(body, cts.Token);
-                await stream.FlushAsync(cts.Token);
+                // Writes are NOT passed cts.Token: a write that fails because
+                // the browser tab was closed mid-response is a different
+                // problem than the 5-minute idle timeout, and the user
+                // deserves to know which one happened. The catch below only
+                // sees the timeout-triggered OCE from AcceptTcpClientAsync.
+                await stream.WriteAsync(head);
+                await stream.WriteAsync(body);
+                await stream.FlushAsync();
 
                 if (succeeded) return token!;
 
@@ -136,6 +141,11 @@ public static class LoginServer
         }
         catch (OperationCanceledException)
         {
+            // The only OperationCanceledException in this method originates at
+            // AcceptTcpClientAsync (the idle timer). Writes no longer take
+            // the token, so a write failing because the browser tab was
+            // closed mid-response surfaces as a plain IOException -- not as a
+            // misleading "Login timed out".
             throw new Exception("Login timed out. Please try again.");
         }
         finally

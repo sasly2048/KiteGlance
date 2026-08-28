@@ -159,6 +159,44 @@ Noted, not fixed (intentional or out of scope):
   unless Debug is on. Intentional: production logs stay readable; the
   debug switch exposes the full trace.
 
+### Third-party audit pass
+
+Independent reviewers listed ~50 candidate issues. The list mostly
+overlaps with the two prior passes; the items the prior passes actually
+missed, or that surfaced between passes, are below.
+
+- `OnStartup` constructed the widget and manager after creating the
+  single-instance mutex. If `new MainWindow()` or `new WidgetManager(...)`
+  threw (a real, if rare, possibility: XAML resource lookup failure on a
+  user's machine, or an HWND-creation `Win32Exception`), the mutex was
+  acquired and never released, so the next launch saw an
+  `AbandonedMutexException` and logged a misleading startup failure. The
+  construction is now in a try/catch that releases and disposes the
+  mutex on any exception, then `Shutdown(1)` so the process exits with a
+  matching exit code.
+- The loopback login server passed its 5-minute cancellation token to
+  the response writes. A user who closed the browser tab mid-redirect
+  saw the response write throw `OperationCanceledException`, which the
+  catch translated as "Login timed out" -- misleading. Writes now
+  complete without the token; the catch now only sees the timeout fired
+  at `AcceptTcpClientAsync`. The user gets the right cause either way
+  (timeout vs. browser-side close).
+
+Items the reviewers listed that were already fixed in the two prior
+audit commits (and so required no new code): mutex gating on
+`_ownsMutex`; the API-secret-not-decrypted-on-Settings-open; the
+removed duplicate `_clock` and `_sessionCheckTimer`; the
+`_onStaticPropertyChanged` field that lets the `SystemParameters`
+handler be removed; the `Key.Space` `when`-guard; the
+diagnostic `WARN` lines in `WidgetState.Load`/`Save`,
+`PriceHistoryService.Load`, and `CredentialVault.Read`; and the
+"IsAuthenticatedAsync returns true on 200 with null data" fix.
+
+Items confirmed to be incorrect as stated: `Theme.Apply` and
+`WidgetState.Load` are NOT called by a second instance -- the early
+return after the single-instance check skips both. (`#30` in the
+reviewer's list.)
+
 ### Changed
 
 - README corrected against the source: five backdrop filenames did not
