@@ -46,6 +46,14 @@
     <Compile Include="../../src/KiteGlance/State/WidgetState.cs" Link="WidgetState.cs" />
     <Compile Include="../../src/KiteGlance/Services/Log.cs" Link="Log.cs" />
     <Compile Include="../../src/KiteGlance/Services/PriceHistoryService.cs" Link="PriceHistoryService.cs" />
+    <!--
+      DesktopPinLogic is the pure decision-logic half of the desktop-pin
+      WndProc hook: it tests whether a given Win32 message or size would
+      lead to a WS_MINIMIZE state. The rest of DesktopPin.cs is WPF and
+      ComCtl32 glue that needs an HwndSource; testing it would require a
+      full Windows desktop, so we link only the pure part here.
+    -->
+    <Compile Include="../../src/KiteGlance/Interop/DesktopPinLogic.cs" Link="DesktopPinLogic.cs" />
   </ItemGroup>
 
 </Project>

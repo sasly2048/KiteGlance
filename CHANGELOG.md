@@ -117,6 +117,47 @@ and this project uses [Semantic Versioning](https://semver.org/).
   still toggle the holdings pane on space. The `when` guard now applies
   to both keys.
 
+### Pinned-to-desktop hardening
+
+The "Pin to desktop" mode used to handle a single minimise code path
+(`WM_SYSCOMMAND SC_MINIMIZE`) and re-assert HWND_BOTTOM from a
+`StateChanged` handler. On Windows 11 that is not enough: the
+four-finger-swipe-down gesture and the taskbar "Show Desktop" button
+reach top-level windows through a different path that bypasses
+`SC_MINIMIZE` entirely -- either by calling `ShowWindow(SW_SHOWMINIMIZED)`
+directly on the HWND, or by broadcasting the undocumented
+`SC_DESKTOP` opcode. The widget ended up in the `WS_MINIMIZE` state and
+disappeared from the desktop.
+
+The WndProc hook now catches every code path that can lead to a
+minimised state, before `DefWindowProc` acts on it:
+
+- `WM_SYSCOMMAND` with `SC_MINIMIZE`, `SC_MAXIMIZE`, or the
+  undocumented `SC_DESKTOP` (0xF130): set `handled = true`, call
+  `ShowWindow(SW_SHOWNOACTIVATE)`, re-assert `HWND_BOTTOM`.
+- `WM_SIZE` with `SIZE_MINIMIZED`: same recovery, for the
+  `ShowWindow(SW_SHOWMINIMIZED)` direct path.
+- `WM_WINDOWPOSCHANGING`: reject any size change to the icon rect
+  (height <= 32, width < 75% of normal), reject `SWP_HIDEWINDOW`,
+  force `hwndInsertAfter = HWND_BOTTOM` unless `SWP_NOZORDER` was set.
+- `WM_SHELLHOOK`, `WM_ACTIVATEAPP` (false), and `WM_WININICHANGE`:
+  belt-and-braces re-pin triggers. The cost is one `SetWindowPos`
+  to the already-bottom-most window, which the OS short-circuits.
+
+The pure decision helpers (which message wParams are minimise-class
+commands, which size rects are icon rects) live in a new
+`Interop/DesktopPinLogic.cs` so the unit tests can pin them without
+spinning up an `HwndSource`. 20 new tests cover the rule table
+(SC_MINIMIZE / SC_MAXIMIZE / SC_DESKTOP / SC_RESTORE, modifier-bit
+masking, the icon-rect thresholds, and the `WM_SIZE SIZE_MINIMIZED`
+check).
+
+The racy `StateChanged` handler in `MainWindow` is gone: the WndProc
+hook handles minimisation proactively, so the widget never enters
+`WS_MINIMIZE` in the first place. A new `DesktopPin.UpdateNormalSize`
+API lets the WPF `SizeChanged` handler keep the "normal size" used by
+the icon-rect heuristic in sync with the expand/collapse animation.
+
 ### Diagnostics
 
 - `WidgetState.Load`, `WidgetState.Save`, `PriceHistoryService.Load`, and

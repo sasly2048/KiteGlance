@@ -261,29 +261,27 @@ public partial class MainWindow : Window
         // a redraw. Coalesce: mark dirty here, do the actual rebuild once per
         // render tick, and only while a rebuild is pending. (No-op on the
         // bottom-most pin path, which keeps DWM corners.)
+        //
+        // Also: when the pane is expanded the widget is taller than the
+        // compact 256px. The WndProc hook's "is this a minimise to the icon
+        // rect?" heuristic needs to know the current "normal" height to
+        // distinguish a real resize from a minimise. Update it here rather
+        // than on every paint.
         SizeChanged += (_, _) =>
         {
-            if (_state.Pin != PinMode.Desktop || _regionDirty) return;
+            if (_state.Pin != PinMode.Desktop) return;
+            DesktopPin.UpdateNormalSize(ActualWidth, ActualHeight);
+            if (_regionDirty) return;
             _regionDirty = true;
             CompositionTarget.Rendering += RebuildRegionOnce;
         };
 
-        // Win+D minimizes bottom-most windows (the one thing the WorkerW
-        // trick did better). Restore immediately: the widget blinks for a
-        // frame instead of vanishing until the user hunts for the tray icon.
-        StateChanged += (_, _) =>
-        {
-            if (_state.Pin == PinMode.Desktop && WindowState == WindowState.Minimized)
-            {
-                Dispatcher.BeginInvoke(() =>
-                {
-                    if (_state.Pin != PinMode.Desktop) return;
-                    Show();
-                    WindowState = WindowState.Normal;
-                    DesktopPin.Glue(this);
-                }, System.Windows.Threading.DispatcherPriority.Background);
-            }
-        };
+        // The previous version re-asserted the pin from a StateChanged
+        // handler, which is reactive: by the time the handler runs, the
+        // widget has already entered the WS_MINIMIZE state and DWM has
+        // stopped painting it. The WndProc hook in DesktopPin now handles
+        // minimisation proactively (see Interop/DesktopPin.cs), so no
+        // StateChanged handler is needed here.
 
         // Animate the CONTENT: with AllowsTransparency=false the window surface
         // belongs to DWM, so Window.Opacity is inert.

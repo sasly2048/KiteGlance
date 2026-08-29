@@ -274,7 +274,7 @@ src/KiteGlance/
 │                              accounts / refresh interval (JSON)
 └── ViewModels/PortfolioViewModel.cs
 
-tests/KiteGlance.Tests/         122 tests, plain net8.0, no WPF
+tests/KiteGlance.Tests/         142 tests, plain net8.0, no WPF
 ├── KiteGlance.Tests.csproj    xUnit project; links the files under test
 ├── PnlMathTests.cs            P&L regression tests vs. real Coin figures
 ├── BackdropServiceTests.cs    Time-of-day / rotation boundary tests
@@ -323,7 +323,7 @@ git push origin v1.0.0
 - [x] ~~Auto-refresh portfolio data~~ (Implemented)
 - [x] ~~Configurable refresh interval~~ (Settings → Auto-refresh: 1–60 minutes, or off)
 - [x] ~~Session expiry handling~~ (Auto-detection every 1 hour)
-- [x] ~~Unit test coverage expansion~~ (122 tests across 9 files)
+- [x] ~~Unit test coverage expansion~~ (142 tests across 10 files)
 - [x] ~~Documentation improvements~~ (Security model, troubleshooting guides)
 - [x] ~~CI/CD enhancements~~ (Code coverage, cross-platform fixes)
 - [x] ~~Multi-account support~~ (Per-account vaults; switch from the tray menu)
