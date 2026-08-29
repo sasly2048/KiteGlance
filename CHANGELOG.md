@@ -5,7 +5,7 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] - 2026-08-29
 
 ### Added
 
@@ -89,7 +89,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - A persistent AMFI outage left no trace in the log, silently degrading
   every fund's valuation.
 
-### Security
+### Security (2026-08-28)
 
 - The Settings window decrypted and displayed the API secret in cleartext
   on every open. The secret field now starts empty and an empty save means
@@ -117,7 +117,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
   still toggle the holdings pane on space. The `when` guard now applies
   to both keys.
 
-### Pinned-to-desktop hardening
+### Pinned-to-desktop hardening (2026-08-29)
 
 The "Pin to desktop" mode used to handle a single minimise code path
 (`WM_SYSCOMMAND SC_MINIMIZE`) and re-assert HWND_BOTTOM from a
@@ -158,7 +158,7 @@ hook handles minimisation proactively, so the widget never enters
 API lets the WPF `SizeChanged` handler keep the "normal size" used by
 the icon-rect heuristic in sync with the expand/collapse animation.
 
-### Diagnostics
+### Diagnostics (2026-08-28)
 
 - `WidgetState.Load`, `WidgetState.Save`, `PriceHistoryService.Load`, and
   `CredentialVault.Read` swallowed every exception silently. A
@@ -166,7 +166,7 @@ the icon-rect heuristic in sync with the expand/collapse animation.
   vault now each leave a `WARN` line so the next "my preferences reset"
   or "my sparkline disappeared" report has a cause to point at.
 
-### Re-audit
+### Re-audit (2026-08-28)
 
 Second pass, after a checklist-driven re-read of every source file
 against the security, correctness, performance, threading, error-handling,
@@ -209,7 +209,7 @@ Noted, not fixed (intentional or out of scope):
   unless Debug is on. Intentional: production logs stay readable; the
   debug switch exposes the full trace.
 
-### Third-party audit pass
+### Third-party audit pass (2026-08-28)
 
 Independent reviewers listed ~50 candidate issues. The list mostly
 overlaps with the two prior passes; the items the prior passes actually
@@ -254,6 +254,13 @@ reviewer's list.)
   against an actual nine and 108, the tray and widget menus were described
   as interchangeable when neither is a superset of the other, and the
   credential section omitted the non-Windows encryption path entirely.
+- Bumped test-side NuGet dependencies in `KiteGlance.Tests.csproj`:
+  `Microsoft.NET.Test.Sdk` 17.11.1 → 18.9.0,
+  `System.Security.Cryptography.ProtectedData` 8.0.0 → 10.0.11, and
+  `xunit.runner.visualstudio` 2.8.2 → 4.0.0. Brought in via
+  dependabot PRs #20, #21, #22; merged 2026-08-29 with all 142 tests
+  passing on the new versions. Production code in `src/KiteGlance` is
+  unchanged; these are test-runtime / test-host bumps only.
 
 ## [1.4.0] - 2026-08-28
 

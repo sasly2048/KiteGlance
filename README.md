@@ -281,10 +281,11 @@ tests/KiteGlance.Tests/         142 tests, plain net8.0, no WPF
 ├── KiteServiceTests.cs        Portfolio assembly, day-change, stale pricing
 ├── AmfiNavServiceTests.cs     NAV parsing, semicolon-in-name rows, staleness
 ├── CredentialVaultTests.cs    AES-GCM round-trip, tamper detection, accounts
-├── PriceHistoryServiceTests.cs Series cap, eviction, corrupt-file recovery
+├── PriceHistoryServiceTests.cs Series cap, eviction, corrupt-file recovery, frozen/intraday
 ├── WidgetStateTests.cs        Atomic save, off-screen clamping, account model
 ├── ThemeTests.cs              Dark and Light define identical keys
-└── LogTests.cs                Message templates, property capture, redaction
+├── LogTests.cs                Message templates, property capture, redaction
+└── DesktopPinLogicTests.cs    Pin-to-desktop WndProc rules (SC_MINIMIZE / SC_DESKTOP / icon rect)
 
 scripts/
 ├── build.ps1                  Single-file self-contained publish
@@ -335,6 +336,13 @@ git push origin v1.0.0
 - [x] ~~Lazy loading for large portfolios~~ (Virtualized holdings list)
 - [x] ~~Structured logging~~ (Message templates and JSON-lines output, without
       taking on Serilog — the no-dependencies rule stands)
+- [x] ~~Pin to desktop survives Win+D and four-finger swipe-down~~ (Implemented
+      2026-08-29 — the WndProc hook now catches every minimise code path:
+      `WM_SYSCOMMAND` with `SC_MINIMIZE` / `SC_MAXIMIZE` / the undocumented
+      `SC_DESKTOP` (0xF130), `WM_SIZE` with `SIZE_MINIMIZED`, the icon-rect
+      detection in `WM_WINDOWPOSCHANGING`, and belt-and-braces
+      `WM_SHELLHOOK` / `WM_ACTIVATEAPP` / `WM_WININICHANGE` re-pins. The
+      widget now stays on the desktop instead of disappearing.)
 
 ### Future Considerations
 - [ ] Light-mode backdrop art (light mode currently tints the dark-tuned images
