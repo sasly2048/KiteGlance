@@ -99,10 +99,23 @@ The acrylic backdrop uses Windows 11 22H2+ APIs. On older builds the widget fall
 ### Option A — download a pre-built release
 
 1. Go to the [Releases](https://github.com/sasly2048/kite-glance/releases) page.
-2. Download the `KiteGlance.exe` for your architecture (`win-arm64` or `win-x64`).
-3. Run it. On first launch it will ask for your Kite Connect API credentials (see [Configuration](#configuration)).
+2. Download the `KiteGlance.exe` that matches **your CPU** — see the
+   table below. Both files are self-contained (no .NET install needed) and
+   start with a double-click.
+3. Run it. On first launch it will ask for your Kite Connect API credentials
+   (see [Configuration](#configuration)).
 
-To install it properly (Start Menu shortcut, autostart, Add/Remove Programs entry), run the installer script from a checkout, or use the Inno Setup `Setup.exe` if one is attached to the release.
+To install it properly (Start Menu shortcut, autostart, Add/Remove Programs
+entry), run the installer script from a checkout, or use the Inno Setup
+`Setup.exe` if one is attached to the release.
+
+> **Which file do I download?**
+>
+> | Your CPU                                  | Download                                  |
+> | ----------------------------------------- | ----------------------------------------- |
+> | Snapdragon X Elite / any Windows-on-ARM   | `KiteGlance-win-arm64.exe`                |
+> | Intel / AMD 64-bit (every "normal" PC)    | `KiteGlance-win-x64.exe`                  |
+> | 32-bit Windows (x86)                      | **Not supported** — see [Troubleshooting](#the-latest-release-isnt-working-on-other-pcs) |
 
 ### Option B — build from source
 
@@ -356,6 +369,74 @@ git push origin v1.0.0
       to the local accumulator, as before.)
 
 Suggestions and contributions are welcome — see [CONTRIBUTING](CONTRIBUTING.md).
+
+## Troubleshooting
+
+### "The latest release isn't working on other PCs"
+
+The single-file exe Windows refuses to run is almost always an
+architecture mismatch. Kite Glance is built per-CPU — there are two
+distinct binaries, and one will not run on the other's hardware.
+
+- On **Snapdragon X Elite** and other Windows-on-ARM machines: download
+  `KiteGlance-win-arm64.exe`.
+- On **Intel / AMD** PCs (which includes virtually every "normal" desktop
+  and laptop in 2026): download `KiteGlance-win-x64.exe`.
+- On **32-bit Windows (x86)**: there is no x86 build and there cannot be,
+  because WPF's 32-bit story on Windows 11 is gone. Use a 64-bit
+  machine, or open an issue describing the actual hardware constraint.
+
+How to tell which one Windows tried to run: right-click the file in
+Explorer → **Properties** → **Compatibility**. If the section reads
+"This app can't run on your PC", you have the wrong architecture.
+Re-download the one your machine needs.
+
+A release with a single, unnamed `KiteGlance.exe` and no `-win-x64` /
+`-win-arm64` suffix is a packaging bug — the binary in that file is one
+architecture or the other, but the user has no way to tell which from
+the filename alone. The release workflow (`release.yml`) is configured
+to attach two separate files; if a tagged release ends up with only one,
+that's the workflow being bypassed (most often by a manual upload
+through the GitHub web UI) and should be re-cut from a clean tag.
+
+### "I downloaded the right exe but double-clicking does nothing"
+
+Open `%APPDATA%\KiteGlance\logs\kiteglance.log` in any text editor.
+Three global exception handlers (`DispatcherUnhandledException`,
+`AppDomain.UnhandledException`,
+`TaskScheduler.UnobservedTaskException` in `App.xaml.cs`) write every
+unhandled error to that file before the process exits, so a
+silent failure on a user's machine is never actually silent. The most
+common entries:
+
+- `Startup failed; releasing mutex and exiting` — `new MainWindow()` or
+  `new WidgetManager(...)` threw. The follow-on lines name the type
+  (typically `Win32Exception` from DWM or a XAML resource lookup
+  failure). Send the file to the issue tracker.
+- `Unhandled domain exception` / `Unobserved task exception` — a
+  background refresh path crashed. The widget marks itself stale and
+  keeps the last-known figures on screen; it does not crash the UI.
+- No log file at all — Windows refused to load the PE at all. That is
+  the architecture mismatch from the section above; the process never
+  reaches `OnStartup` to write a log.
+
+### "Install.ps1 says ARCHITECTURE MISMATCH"
+
+The repo's `dist\` contains only one exe and it's the wrong one for
+your CPU. Re-run the build:
+
+```powershell
+.\scripts\build.ps1           # builds both arm64 and x64
+.\scripts\install.ps1         # installs the right one for this machine
+```
+
+### 32-bit Windows is unsupported
+
+.NET 8 itself runs on x86, but this project is `net8.0-windows` with
+WPF + WinForms, and there is no WPF runtime for x86 on Windows 11.
+There is no build target for `win-x86` and adding one is not planned.
+
+---
 
 ## Security Considerations
 

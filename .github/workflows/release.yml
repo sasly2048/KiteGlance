@@ -45,7 +45,17 @@ jobs:
           -o publish/${{ matrix.rid }}
 
       - name: Rename for release
-        shell: pwsh
+        # `powershell` (the Windows-native 5.1) is preferred over `pwsh`
+        # (PowerShell Core 7) so the workflow runs on every Windows runner,
+        # including the older `windows-2019` images that pre-date Core. The
+        # commands used here are 5.1-compatible.
+        #
+        # The architecture suffix is required: an un-suffixed KiteGlance.exe
+        # attached to a release was the entire cause of the v1.5 "isn't
+        # working on other PCs" reports -- users cannot tell which CPU the
+        # binary is for from the filename alone, and an ARM64 PE silently
+        # fails to load on an x64 PC. Never upload a bare KiteGlance.exe.
+        shell: powershell
         run: |
           $dir = "src/KiteGlance/publish/${{ matrix.rid }}"
           Rename-Item "$dir/KiteGlance.exe" "KiteGlance-${{ matrix.rid }}.exe"
@@ -66,10 +76,27 @@ jobs:
         with:
           path: artifacts
 
+      - name: Verify architecture-suffixed assets
+        # Defence in depth against the v1.5 "single un-suffixed exe" bug:
+        # refuse to publish any release whose artifacts don't include the
+        # RID. Anyone manually uploading a bare KiteGlance.exe will trip
+        # this check before it reaches end users.
+        shell: bash
+        run: |
+          missing=$(find artifacts -maxdepth 3 -type f -name 'KiteGlance.exe' | wc -l)
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Found a bare KiteGlance.exe in the artifacts."
+            echo "::error::Every published binary must be named KiteGlance-win-<arch>.exe."
+            find artifacts -maxdepth 3 -type f -name 'KiteGlance.exe'
+            exit 1
+          fi
+          echo "OK: all artifacts are architecture-suffixed."
+          find artifacts -maxdepth 3 -type f -name 'KiteGlance-*.exe'
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.exe
+          files: artifacts/**/KiteGlance-*.exe
           generate_release_notes: true
           draft: false
           prerelease: false

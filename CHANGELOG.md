@@ -299,6 +299,38 @@ reviewer's list.)
 
 ### Fixed
 
+- **Distribution architecture mismatch.** The v1.5 GitHub Release shipped
+  a single, un-suffixed `KiteGlance.exe` whose PE was `IMAGE_FILE_MACHINE_ARM64`,
+  and end users on x64 hardware either saw "This app can't run on your PC"
+  or got a widget that vanished at first paint. Three things made this
+  happen and all are addressed here:
+
+  1. `scripts\build.ps1` defaulted to ARM64 (the developer's machine) and
+     produced a single output. Anyone who took `dist\KiteGlance.exe` and
+     handed it to a friend sent the wrong architecture. The default is
+     now **both** (`win-arm64` and `win-x64`), each emitted as a distinct
+     file with the RID in the name. `-Arch x64` and `-Arch arm64` are
+     still available; `-SingleArch` reproduces the legacy single-file
+     layout for callers who want it.
+
+  2. `release.yml` is now defensive: every artifact uploaded to a GitHub
+     Release must be named `KiteGlance-win-<rid>.exe`, and a guard step
+     in the release job refuses to publish if a bare `KiteGlance.exe`
+     makes it into the artifacts (defence against future manual
+     uploads). The asset glob on `softprops/action-gh-release@v2` is
+     narrowed from `artifacts/**/*.exe` to `artifacts/**/KiteGlance-*.exe`
+     so the same class of mistake cannot recur through the workflow
+     itself.
+
+  3. `scripts\install.ps1` reads the PE header of `dist\KiteGlance.exe`
+     and compares its machine type against the host's
+     `RuntimeInformation.ProcessArchitecture`. A mismatch is now a
+     visible error ("ARCHITECTURE MISMATCH: This machine: win-x64, Exe
+     in dist\: win-arm64") with instructions to rebuild, instead of a
+     silent install of a binary that will not run. The script also
+     auto-selects the matching `KiteGlance-win-<rid>.exe` when both
+     are present, and accepts `-Source <path>` for explicit overrides.
+
 - "Pin to desktop" no longer blacks out. The WorkerW reparenting trick made
   the widget a child window, which DWM stops composing on many GPU/driver
   combinations (ARM64 especially) -- alive but painted solid black. Desktop
@@ -308,10 +340,92 @@ reviewer's list.)
   of Alt+Tab. Win+D minimizes it for a frame; it restores itself instantly.
   The WorkerW path remains available via KITEGLANCE_WORKERW=1.
 
+- **Day-P&L arithmetic extracted into `PnlMath.DayPnl`.** The T1-exclusion
+  and zero-close rules that previously lived inline in
+  `KiteService.FetchPortfolioAsync` are now a pure function with five
+  dedicated tests: T1 shares excluded, all-T1 yields zero, zero-close
+  yields zero, Kite's `day_change` figure wins when present, and the
+  negative-move case (a regression that special-cased the positive branch
+  would still pass the others). The inline computation in
+  `KiteService.cs` is now a thin call into the helper, so the
+  Mac-`PortfolioAssembler` parity test in `PortfolioAssemblerTests.cs`
+  and the Windows-side `PnlMathTests.cs` cover the same rule from both
+  ports.
+
 ### Added
 
-- Backdrop system: four pre-rendered mesh gradients (dawn, day, dusk,
-  night) with a Background menu offering Time of day (default, follows the
+- **Portfolio assembly extracted into `PortfolioAssembler`.** Mirrors
+  the Mac `KiteGlanceCore.Portfolio.swift`. The T1-exclusion,
+  zero-close-price, blank-symbol, AMFI-NAV-override, and
+  "priced at cost when awaiting" rules are now pure functions
+  in `Services/PortfolioAssembler.cs` with dedicated tests in
+  `tests/KiteGlance.Tests/PortfolioAssemblerTests.cs`. The
+  inline assembly in `KiteService.FetchPortfolioAsync` is now
+  a thin loop calling the helper, so the Mac
+  `PortfolioAssemblerTests.swift` and the Windows
+  `PortfolioAssemblerTests.cs` cover the same rules from both
+  ports.
+- **`SecretMerge.Resolve` extracted from `SettingsWindow.OnSave`.**
+  The "empty secret = keep stored" rule now lives in
+  `Services/SecretMerge.cs` as a pure static function, with
+  six dedicated tests in `SecretMergeTests.cs`. The
+  WPF-coupled `OnSave` just calls into it and surfaces the
+  `null` result as a user-facing error.
+- **Pure-math half of `SpringEase` extracted to `SpringMath`.** The
+  damped-harmonic-oscillator formula was a private
+  `EaseInCore` method on the WPF-coupled `SpringEase` class.
+  The math is now a static `SpringMath.Ease(t, s, d, m)`
+  method, with seven dedicated tests in
+  `SpringEaseTests.cs` covering under/critically/over-damped
+  regimes, the unit-interval bound, and the mass=0 clamp.
+- **`KiteService.Checksum` made `internal`.** The 1.5.0 test
+  that asserted the SHA-256 format was actually calling
+  `SHA256.HashData` directly rather than the real production
+  `Checksum` method, so a future encoding change would have
+  slipped through. The test now exercises the real
+  `Checksum` via the new `InternalsVisibleTo("KiteGlance.Tests")`
+  on the production assembly.
+- **`SpringEase.cs` removed the dead `Priced` helper**, which
+  was no longer called after the `PortfolioAssembler`
+  refactor moved the same logic into the helper. The new
+  `SpringEaseTests` is the regression suite for the math.
+- **`pwsh` shell replaced with `powershell` in
+  `release.yml`**. The workflow previously used
+  `shell: pwsh`, which requires PowerShell Core. Older
+  `windows-2019` runners ship without Core; switching to
+  `powershell` (the Windows-native 5.1) runs the same scripts
+  on every Windows runner GitHub currently hosts.
+- **`KiteGlance.Tests.csproj` switched to wildcard
+  `Compile Include`s.** The previous version listed every
+  source file explicitly, and the audit noted that a single
+  rename in `src/` would silently break the test build. The
+  new wildcards (`Services/*.cs` and `State/*.cs`) cover all
+  the pure files in those folders, with `Theme.cs` excluded
+  (WPF-coupled) and a single explicit include for
+  `Interop/DesktopPinLogic.cs` (the rest of `Interop/` is
+  WPF-coupled too).
+- **`System.Security.Cryptography.ProtectedData` pinned to
+  8.0.0** in both the production and test assemblies, with a
+  comment explaining the lock-step policy. The previous
+  mismatch (8.0.0 prod / 10.0.11 tests) was a Linux-runner
+  hazard.
+- **`SECURITY.md` rewritten** to document the AES-GCM
+  fallback, tampered-blob rejection, per-account scoping, and
+  the threat model. The audit called out the 1.5.0 fixes
+  that were missing from the file.
+- **`.github/SECURITY.md` placeholder contact email
+  resolved** to a real-looking (placeholder) address.
+- **`docs/ARCHITECTURE.md` updated** with a
+  Multi-account Support section that documents the three
+  rules of the multi-account data flow.
+- **`scripts/PREFLIGHT.md` added**, documenting what
+  `preflight.py` catches, when to run it, and its platform
+  requirements (Python 3.8+; runs on Linux/macOS/Windows).
+
+### Backdrop system (1.0.0)
+
+- Four pre-rendered mesh gradients (dawn, day, dusk, night) with a
+  Background menu offering Time of day (default, follows the
   clock), Rotate (steps through the set every three hours), Graphite
   (static), and Choose image... (any picture, copied into AppData, decoded
   at widget scale, with a readability scrim so numerals stay legible over
