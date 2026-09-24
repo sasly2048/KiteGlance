@@ -64,4 +64,40 @@ public static class PnlMath
     /// <summary>P&L as a percentage of invested. Zero when nothing is invested.</summary>
     public static decimal PnlPct(decimal pnl, decimal invested)
         => invested > 0m ? pnl / invested * 100m : 0m;
+
+    /// <summary>
+    /// A single holding's contribution to the day's P&L.
+    ///
+    /// T1 stock was bought today and held no position at yesterday's close,
+    /// so crediting it a full day's move inflates the day figure and
+    /// makes the widget disagree with the Kite app. Only the settled
+    /// quantity counts. Kite's `day_change` is preferred when present
+    /// because it is the value the app's own dashboard uses; the
+    /// (last - close) computation is the fallback.
+    /// </summary>
+    public static decimal DayPnl(
+        decimal quantity, decimal t1Quantity,
+        decimal lastPrice, decimal closePrice,
+        decimal? dayChange)
+    {
+        // Kite's own day-change figure applies to the settled quantity
+        // already, so T1-exclusion is implicit.
+        if (dayChange is { } change) return quantity * change;
+
+        // A zero close means the security was not trading yesterday --
+        // booking a full move against zero would credit the entire
+        // position with "today's gain". Treat as no day-P&L.
+        if (closePrice <= 0m) return 0m;
+
+        // Per the Kite holdings API, `quantity` is the SETTLED quantity
+        // (delivered to demat) and `t1Quantity` is a separate, additive count
+        // of shares bought today that have not settled. Only settled shares
+        // held a position at yesterday's close, so the day-P&L multiplier is
+        // `quantity` directly. A whole position still in T1 is `quantity == 0`
+        // -- t1Quantity is not part of this arithmetic beyond documenting why
+        // the settled figure is the right one.
+        if (quantity <= 0m) return 0m;
+
+        return quantity * (lastPrice - closePrice);
+    }
 }

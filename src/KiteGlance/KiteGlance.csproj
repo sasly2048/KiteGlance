@@ -51,6 +51,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      Pinned to 8.0.0 to match the test assembly, which uses 8.0.0
+      for the same reason. Mismatched versions between the
+      production binary and the test assembly were a maintenance
+      trap before 1.5.0: the production binary's DPAPI bindings
+      disagreed with the test assembly's in subtle ways on Linux
+      runners. Bumping either side now bumps the other.
+    -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
@@ -65,6 +73,17 @@
     <Resource Include="Assets\backdrop-evening.png" />
     <Resource Include="Assets\backdrop-night.png" />
     <Resource Include="Assets\backdrop-midnight.png" />
+  </ItemGroup>
+
+  <!--
+    Grant the test assembly visibility of `internal` members, so
+    `KiteService.Checksum` and the WPF-coupled `WindowMaterial`
+    helpers can be exercised directly. Without this, the test that
+    used to exist called `SHA256.HashData` (a copy of the relevant
+    one-liner) and missed the real production method.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="KiteGlance.Tests" />
   </ItemGroup>
 
 </Project>

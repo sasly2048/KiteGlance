@@ -31,29 +31,44 @@
 
   <ItemGroup>
     <!--
-      We link the single source file under test rather than referencing the
-      WPF project (which targets net8.0-windows and would drag WPF onto a
-      plain-net8.0 test assembly). The Holding class inside KiteService.cs is
-      the unit under test; compiling it here in isolation keeps the tests
-      cross-platform. If Holding ever moves to its own Models/ file, point
-      this Compile Include at that file instead.
+      We link the relevant source files rather than referencing the
+      WPF project (which targets net8.0-windows and would drag WPF
+      onto a plain-net8.0 test assembly). The classes inside these
+      files are the unit under test; compiling them here in
+      isolation keeps the tests cross-platform.
+
+      Wildcards are used so adding a new pure file under
+      `src/KiteGlance/Services/` (e.g. `PortfolioAssembler.cs`) does
+      not require editing this project file. The earlier version
+      listed files one-by-one, and the audit noted that pattern was
+      fragile - a single rename in `src/` would silently break the
+      test build. The wildcards below are restricted to the
+      `Services/` folder, and `Theme.cs` is excluded because it
+      imports `System.Windows` (WPF), which is not available on
+      the net8.0 (non-Windows) target.
     -->
-    <Compile Include="../../src/KiteGlance/Services/PnlMath.cs" Link="PnlMath.cs" />
-    <Compile Include="../../src/KiteGlance/Services/BackdropService.cs" Link="BackdropService.cs" />
-    <Compile Include="../../src/KiteGlance/Services/CredentialVault.cs" Link="CredentialVault.cs" />
-    <Compile Include="../../src/KiteGlance/Services/AmfiNavService.cs" Link="AmfiNavService.cs" />
-    <Compile Include="../../src/KiteGlance/Services/KiteService.cs" Link="KiteService.cs" />
-    <Compile Include="../../src/KiteGlance/State/WidgetState.cs" Link="WidgetState.cs" />
-    <Compile Include="../../src/KiteGlance/Services/Log.cs" Link="Log.cs" />
-    <Compile Include="../../src/KiteGlance/Services/PriceHistoryService.cs" Link="PriceHistoryService.cs" />
+    <Compile Include="../../src/KiteGlance/Services/*.cs" Link="Services/%(Filename)%(Extension)" Exclude="../../src/KiteGlance/Services/Theme.cs" />
+    <Compile Include="../../src/KiteGlance/State/*.cs" Link="State/%(Filename)%(Extension)" />
     <!--
-      DesktopPinLogic is the pure decision-logic half of the desktop-pin
-      WndProc hook: it tests whether a given Win32 message or size would
-      lead to a WS_MINIMIZE state. The rest of DesktopPin.cs is WPF and
-      ComCtl32 glue that needs an HwndSource; testing it would require a
-      full Windows desktop, so we link only the pure part here.
+      DesktopPinLogic is the pure decision-logic half of the
+      desktop-pin WndProc hook: it tests whether a given Win32
+      message or size would lead to a WS_MINIMIZE state. The rest of
+      DesktopPin.cs is WPF and ComCtl32 glue that needs an
+      HwndSource; testing it would require a full Windows desktop,
+      so we link only the pure part here. Note: a wildcard for
+      `Interop/*.cs` would also pull in `DesktopPin.cs` and break
+      the Linux build, so the explicit list is intentional.
     -->
-    <Compile Include="../../src/KiteGlance/Interop/DesktopPinLogic.cs" Link="DesktopPinLogic.cs" />
+    <Compile Include="../../src/KiteGlance/Interop/DesktopPinLogic.cs" Link="Interop/DesktopPinLogic.cs" />
+    <!--
+      `SpringMath` is the pure-math half of the WPF-coupled
+      `SpringEase` class. The latter derives from
+      `System.Windows.Media.Animation.EasingFunctionBase` and so
+      cannot be linked into the net8.0 (non-Windows) test
+      assembly; the math lives in `SpringMath.Ease`, which is
+      the only file we link.
+    -->
+    <Compile Include="../../src/KiteGlance/Motion/SpringMath.cs" Link="Motion/SpringMath.cs" />
   </ItemGroup>
 
 </Project>

@@ -16,7 +16,9 @@ public class KiteService : IDisposable
 {
     private const string BaseUrl = "https://api.kite.trade";
 
-    private readonly HttpClient _http = new();
+    // 20s timeout matches AmfiNavService. The default (100s) let a hung Kite
+    // endpoint hold the refresh gate for over a minute, stalling the widget.
+    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
     private readonly CredentialVault _vault;
     private readonly AmfiNavService _amfi = new();
 
@@ -121,9 +123,20 @@ public class KiteService : IDisposable
             UserName = profile.UserName;
             return true;
         }
-        catch
+        catch (KiteAuthException)
         {
+            // A real token rejection (ClearAccessToken / TokenException path):
+            // the session is genuinely invalid, so report unauthenticated.
             return false;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            // Transport failure (offline at boot, DNS, timeout, 5xx) is NOT a
+            // token problem. Bouncing the user to Sign-in here logged out a
+            // valid session on a transient blip. Keep the session; the next
+            // real refresh surfaces an auth error if one truly exists.
+            Log.Warn($"/user/profile transport error, keeping session: {ex.GetType().Name}");
+            return true;
         }
     }
 
@@ -209,39 +222,23 @@ public class KiteService : IDisposable
         }
 
         var all = new List<Holding>();
-        decimal dayPnl = 0, equityCurrent = 0;
+        decimal dayPnl = 0, equityCurrent = 0, settledPrevClose = 0;
 
         foreach (var h in equity)
         {
-            var qty = h.Quantity + (h.T1Quantity ?? 0);
-            if (qty <= 0) continue;
+            // The T1-exclusion, zero-close, blank-name, and
+            // "Priced returns avg when awaiting" rules are pure
+            // functions in `PortfolioAssembler` and `PnlMath`,
+            // tested independently. The loop here is a thin caller.
+            var holding = PortfolioAssembler.AssembleEquity(h, out var perRowDayPnl, out var perRowPrevClose);
+            if (holding is null) continue;
 
-            var last = Priced(h.LastPrice, h.AveragePrice, out var stale);
-
-            var change = h.DayChange
-                ?? (h.ClosePrice is > 0 ? h.LastPrice - h.ClosePrice.Value : 0);
-
-            // Day change applies to settled shares only. T1 stock was bought
-            // today and held no position at yesterday's close, so attributing a
-            // full day's move to it inflates (or deflates) the day figure and
-            // makes it disagree with the Kite app. Holdings *value* below still
-            // counts every share -- you own them either way.
-            dayPnl += h.Quantity * change;
-            equityCurrent += qty * last;
-
-            all.Add(new Holding
-            {
-                Symbol = string.IsNullOrWhiteSpace(h.TradingSymbol)
-                    ? "Unnamed holding"
-                    : h.TradingSymbol,
-                Qty = qty,
-                AvgPrice = h.AveragePrice,
-                LastPrice = last,
-                InstrumentToken = h.InstrumentToken,
-                IsMutualFund = false,
-                AwaitingPrice = stale,
-                ApiPnl = h.Pnl
-            });
+            dayPnl += perRowDayPnl;
+            settledPrevClose += perRowPrevClose;
+            // The current-value aggregation includes T1 shares -- you
+            // own them even if the day-PnL does not.
+            equityCurrent += holding.Qty * holding.LastPrice;
+            all.Add(holding);
         }
 
         // Kite's /mf/holdings last_price is a stale settlement NAV -- verified
@@ -271,42 +268,31 @@ public class KiteService : IDisposable
 
         foreach (var f in funds)
         {
-            if (f.Quantity <= 0) continue;
-
-            var kiteNav = f.LastPrice;
-            var apiPnl = f.Pnl;
-
+            decimal? amfiOverride = null;
             if (liveNavs is not null
                 && !string.IsNullOrWhiteSpace(f.TradingSymbol)
                 && liveNavs.TryGetValue(f.TradingSymbol.Trim(), out var amfiNav)
                 && amfiNav > 0)
             {
-                kiteNav = amfiNav;
-                apiPnl = null;   // stale-NAV pnl cannot annotate a live NAV
+                amfiOverride = amfiNav;
             }
 
-            var last = Priced(kiteNav, f.AveragePrice, out var stale);
-
-            all.Add(new Holding
-            {
-                Symbol = string.IsNullOrWhiteSpace(f.FundName)
-                    ? "Awaiting allotment"
-                    : f.FundName,
-                Qty = f.Quantity,
-                AvgPrice = f.AveragePrice,
-                LastPrice = last,
-                IsMutualFund = true,
-                AwaitingPrice = stale,
-                ApiPnl = apiPnl
-            });
+            // The blank-name, Kite-NAV-override, and "drop Kite pnl
+            // when AMFI is live" rules live in `PortfolioAssembler`,
+            // tested independently.
+            var holding = PortfolioAssembler.AssembleFund(f, amfiOverride);
+            if (holding is null) continue;
+            all.Add(holding);
         }
 
-        var prevClose = equityCurrent - dayPnl;
-
+        // Day-% denominator is the settled shares' yesterday-close value --
+        // the same T1-excluded basis as dayPnl. (Previously derived from the
+        // T1-inclusive current value, which drifted the headline % whenever a
+        // holding had unsettled shares or used the day_change fallback.)
         return new PortfolioData
         {
             DayPnl = dayPnl,
-            DayPnlPct = prevClose > 0 ? dayPnl / prevClose * 100 : 0,
+            DayPnlPct = settledPrevClose > 0 ? dayPnl / settledPrevClose * 100 : 0,
             Holdings = all
         };
     }
@@ -531,21 +517,18 @@ public class KiteService : IDisposable
         }
     }
 
-    /// <summary>
-    /// Kite returns last_price = 0 for units they have not yet priced -- a fund
-    /// ordered but not allotted, or a NAV that has not published today.
+    /// Computes the Kite Connect session checksum. The format is
+    /// "the SHA-256 of the three fields concatenated, hex-encoded with
+    /// lowercase letters" -- Kite's server validates the encoding
+    /// exactly, and an uppercase hex string here would be rejected.
     ///
-    /// Reading that as "the asset is worth nothing" is how you invent a 100%
-    /// loss out of thin air and poison the portfolio total. The honest read is
-    /// "unknown, so hold it cost": P&L of zero, and the row says so.
-    /// </summary>
-    private static decimal Priced(decimal last, decimal avg, out bool awaiting)
-    {
-        awaiting = last <= 0 && avg > 0;
-        return awaiting ? avg : last;
-    }
-
-    private static string Checksum(string apiKey, string requestToken, string apiSecret)
+    /// `internal` so the test assembly can exercise the real method
+    /// rather than a copy of `SHA256.HashData`. The audit
+    /// (1.5.0) flagged the test that *only* called `SHA256.HashData`
+    /// directly; the real `Checksum` was uncovered and any future
+    /// change to its encoding (e.g. switching to a different
+    /// character separator) would have slipped through.
+    internal static string Checksum(string apiKey, string requestToken, string apiSecret)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(apiKey + requestToken + apiSecret));
         return Convert.ToHexString(hash).ToLowerInvariant();

@@ -47,29 +47,7 @@ public sealed class SpringEase : EasingFunctionBase
         set => SetValue(MassProperty, value);
     }
 
-    protected override double EaseInCore(double t)
-    {
-        var m = Math.Max(Mass, 0.0001);
-        var w0 = Math.Sqrt(Stiffness / m);                       // natural frequency
-        var zeta = Damping / (2 * Math.Sqrt(Stiffness * m));     // damping ratio
-
-        double x;
-
-        if (zeta < 1)
-        {
-            // Underdamped: overshoots, then rings down. This is the good one.
-            var wd = w0 * Math.Sqrt(1 - zeta * zeta);            // damped frequency
-            x = Math.Exp(-zeta * w0 * t) *
-                (Math.Cos(wd * t) + zeta * w0 / wd * Math.Sin(wd * t));
-        }
-        else
-        {
-            // Critically damped: fastest approach with no overshoot.
-            x = Math.Exp(-w0 * t) * (1 + w0 * t);
-        }
-
-        return 1 - x;
-    }
+    protected override double EaseInCore(double t) => SpringMath.Ease(t, Stiffness, Damping, Mass);
 
     protected override Freezable CreateInstanceCore() => new SpringEase();
 

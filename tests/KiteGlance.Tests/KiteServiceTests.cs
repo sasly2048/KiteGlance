@@ -37,14 +37,52 @@ public class KiteServiceTests : IDisposable
     [Fact]
     public void Checksum_produces_valid_sha256_hex()
     {
-        // Test the checksum helper via reflection or direct access if available
-        // For now, verify the format is correct (64 hex chars for SHA256)
-        var testData = "apikey" + "requesttoken" + "apisecret";
-        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(testData));
-        var hex = Convert.ToHexString(hash).ToLowerInvariant();
-        
-        Assert.Equal(64, hex.Length);
-        Assert.Matches("^[a-f0-9]{64}$", hex);
+        // Calls the real `KiteService.Checksum` -- the test assembly
+        // has `InternalsVisibleTo("KiteGlance.Tests")` so the
+        // previously-private method is reachable. The earlier
+        // version of this test called `SHA256.HashData` directly and
+        // missed the real production method, which meant any future
+        // change to the encoding (e.g. adding a separator between
+        // the three fields) would have slipped through.
+        var checksum = KiteService.Checksum("apikey", "requesttoken", "apisecret");
+
+        Assert.Equal(64, checksum.Length);
+        Assert.Matches("^[a-f0-9]{64}$", checksum);
+    }
+
+    /// Kite's API rejects checksums that use uppercase hex or
+    /// non-hex characters. `Convert.ToHexString` returns uppercase by
+    /// default, so the production method explicitly lowercases. This
+    /// pins that step -- a regression that removed the `ToLower`
+    /// would be caught here before it reached the server.
+    [Fact]
+    public void Checksum_uses_lowercase_hex()
+    {
+        var checksum = KiteService.Checksum("apikey", "requesttoken", "apisecret");
+        Assert.Equal(checksum.ToLowerInvariant(), checksum);
+    }
+
+    /// The checksum is over the *concatenation* of the three fields,
+    /// with no separator. A regression that introduced a separator
+    /// (e.g. `apiKey + "|" + requestToken + "|" + apiSecret`) would
+    /// compute a different hash for the same inputs and Kite would
+    /// reject every login. This test pins the exact concat order
+    /// by comparing the actual output to the canonical SHA-256 of
+    /// the documented input.
+    [Fact]
+    public void Checksum_matches_canonical_sha256_of_concatenation()
+    {
+        var apiKey = "abc";
+        var requestToken = "def";
+        var apiSecret = "ghi";
+        var expected = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(apiKey + requestToken + apiSecret)
+            )
+        ).ToLowerInvariant();
+
+        var actual = KiteService.Checksum(apiKey, requestToken, apiSecret);
+        Assert.Equal(expected, actual);
     }
 
     [Fact]

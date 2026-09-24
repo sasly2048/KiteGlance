@@ -157,4 +157,86 @@ public class PnlMathTests
         // arithmetic, not Coin's rounding.)
         Assert.Equal(-2.03m, PnlMath.PnlPct(-143.84m, 7099.42m), precision: 2);
     }
+
+    // ---- day P&L: T1 exclusion and the zero-close guard ----------------
+
+    /// The day-P&L fix. T1 stock was bought today and held no position at
+    /// yesterday's close, so crediting it a full day's move inflates the
+    /// day figure and makes the widget disagree with the Kite app. Only
+    /// the settled `quantity` counts.
+    [Fact]
+    public void DayPnl_excludes_T1_quantity()
+    {
+        // 10 settled shares at +10 = 100. If T1 were included the answer
+        // would be 1000, and the day-P&L figure would not match Kite.
+        var day = PnlMath.DayPnl(
+            quantity: 10, t1Quantity: 90,
+            lastPrice: 110, closePrice: 100,
+            dayChange: null
+        );
+        Assert.Equal(100m, day);
+    }
+
+    /// When every share is T1 the position is brand new and has no
+    /// yesterday-close to measure against. The day's move on those
+    /// shares is irrelevant to the day-P&L figure.
+    [Fact]
+    public void DayPnl_is_zero_when_all_shares_are_T1()
+    {
+        // All shares still in T1 means nothing has settled: quantity == 0,
+        // t1Quantity holds the unsettled count. (quantity:100,t1:100 is
+        // impossible against the real API -- settled and T1 are disjoint.)
+        var day = PnlMath.DayPnl(
+            quantity: 0, t1Quantity: 100,
+            lastPrice: 110, closePrice: 100,
+            dayChange: null
+        );
+        Assert.Equal(0m, day);
+    }
+
+    /// A newly listed or unpriced holding reports `close_price: 0`.
+    /// Without the guard, `last - 0` books the entire position as
+    /// today's gain. The day figure is zero until Kite has a real
+    /// previous close.
+    [Fact]
+    public void DayPnl_is_zero_when_close_price_is_zero()
+    {
+        var day = PnlMath.DayPnl(
+            quantity: 100, t1Quantity: 0,
+            lastPrice: 500, closePrice: 0,
+            dayChange: null
+        );
+        Assert.Equal(0m, day);
+    }
+
+    /// Kite's own `day_change` figure takes precedence over the
+    /// (last - close) computation. The settled-only rule is implicit
+    /// here because Kite's figure already excludes T1.
+    [Fact]
+    public void DayPnl_uses_kite_day_change_when_present()
+    {
+        // 10 settled shares, Kite's day_change = 5, so 50. Falling
+        // back to (110 - 100) * 10 = 100 would double-count and
+        // disagree with the Kite dashboard.
+        var day = PnlMath.DayPnl(
+            quantity: 10, t1Quantity: 0,
+            lastPrice: 110, closePrice: 100,
+            dayChange: 5m
+        );
+        Assert.Equal(50m, day);
+    }
+
+    /// The day-P&L fix on a negative move. Same rule, opposite sign --
+    /// a regression that special-cased the positive branch would pass
+    /// the T1 test but still misreport losses.
+    [Fact]
+    public void DayPnl_excludes_T1_quantity_on_a_loss()
+    {
+        var day = PnlMath.DayPnl(
+            quantity: 10, t1Quantity: 90,
+            lastPrice: 90, closePrice: 100,
+            dayChange: null
+        );
+        Assert.Equal(-100m, day);
+    }
 }

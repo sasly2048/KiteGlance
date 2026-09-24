@@ -118,25 +118,17 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        // The secret field starts empty on purpose: we never decrypt it just
-        // to show it back. An empty field means "keep what is already stored";
-        // a non-empty field means "replace it". Without this branch, the first
-        // Save after a successful setup would silently wipe the secret.
-        string secret;
-        if (string.IsNullOrEmpty(secretInput))
+        // The "empty secret = keep existing" rule lives in
+        // `SecretMerge.Resolve` so it has a unit-test surface; the
+        // UI just calls into it and reports the `null` case as the
+        // missing-secret error.
+        var (_, existingSecret) = _vault.GetCredentials();
+        var secret = SecretMerge.Resolve(secretInput, existingSecret);
+        if (secret is null)
         {
-            var (_, existing) = _vault.GetCredentials();
-            if (string.IsNullOrEmpty(existing))
-            {
-                ErrorText.Text = "The API secret is required.";
-                ErrorText.Visibility = Visibility.Visible;
-                return;
-            }
-            secret = existing;
-        }
-        else
-        {
-            secret = secretInput.Trim();
+            ErrorText.Text = "The API secret is required.";
+            ErrorText.Visibility = Visibility.Visible;
+            return;
         }
 
         try

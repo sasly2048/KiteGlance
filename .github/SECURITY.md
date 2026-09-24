@@ -15,7 +15,7 @@ We take the security of Kite Glance seriously. If you believe you've found a sec
 
 ### How to Report
 
-1. **Email**: Send your report to the maintainer at [contact email from README]
+1. **Email**: Send your report to `security@kiteglance.example.com` (replace with the real contact before publishing this repo; the placeholder is intentional so the address is not a harvested target)
 2. **Subject Line**: Use `[Security] Kite Glance - Brief Description`
 3. **Include**:
    - Description of the vulnerability
