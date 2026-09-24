@@ -271,7 +271,7 @@ public class KiteService : IDisposable
             decimal? amfiOverride = null;
             if (liveNavs is not null
                 && !string.IsNullOrWhiteSpace(f.TradingSymbol)
-                && liveNavs.TryGetValue(f.TradingSymbol.Trim(), out var amfiNav)
+                && liveNavs.TryGetValue(f.TradingSymbol.Trim().ToUpperInvariant(), out var amfiNav)
                 && amfiNav > 0)
             {
                 amfiOverride = amfiNav;

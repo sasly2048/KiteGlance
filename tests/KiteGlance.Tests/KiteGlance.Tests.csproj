@@ -47,7 +47,7 @@
       imports `System.Windows` (WPF), which is not available on
       the net8.0 (non-Windows) target.
     -->
-    <Compile Include="../../src/KiteGlance/Services/*.cs" Link="Services/%(Filename)%(Extension)" Exclude="../../src/KiteGlance/Services/Theme.cs" />
+    <Compile Include="../../src/KiteGlance/Services/*.cs" Link="Services/%(Filename)%(Extension)" Exclude="../../src/KiteGlance/Services/Theme.cs;../../src/KiteGlance/Services/LightBackdrop.cs" />
     <Compile Include="../../src/KiteGlance/State/*.cs" Link="State/%(Filename)%(Extension)" />
     <!--
       DesktopPinLogic is the pure decision-logic half of the

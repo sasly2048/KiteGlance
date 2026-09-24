@@ -358,8 +358,10 @@ git push origin v1.0.0
       widget now stays on the desktop instead of disappearing.)
 
 ### Future Considerations
-- [ ] Light-mode backdrop art (light mode currently tints the dark-tuned images
-      rather than shipping a second set)
+- [x] ~~Light-mode backdrop art~~ (Implemented — light mode now draws computed
+      light mesh-gradient backdrops per day-phase at runtime, `LightBackdrop.cs`,
+      instead of reusing the dark-tuned PNGs. No second raster set shipped; the
+      no-dependencies rule stands.)
 - [x] ~~Intraday sparkline resolution for users with a historical-data subscription~~
       (Implemented — Kite's `/instruments/historical/{token}/minute?interval=5`
       endpoint is fetched on first backfill and down-sampled to the sparkline

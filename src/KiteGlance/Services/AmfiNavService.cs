@@ -71,6 +71,7 @@ public sealed class AmfiNavService : IDisposable
     public async Task<decimal?> GetNavAsync(string isin)
     {
         if (string.IsNullOrWhiteSpace(isin)) return null;
+        isin = isin.Trim().ToUpperInvariant();
 
         var table = await EnsureCacheAsync();
         return table is not null && table.TryGetValue(isin, out var nav) ? nav : null;
@@ -210,8 +211,11 @@ public sealed class AmfiNavService : IDisposable
                 || nav <= 0)
                 continue;
 
-            var isinGrowth = parts[1].Trim();
-            var isinReinvest = parts[2].Trim();
+            // ISINs are uppercase by spec, but normalise defensively so a
+            // stray lower-case/whitespace variant in either AMFI's file or
+            // Kite's tradingsymbol cannot cause a silent miss -> stale NAV.
+            var isinGrowth = parts[1].Trim().ToUpperInvariant();
+            var isinReinvest = parts[2].Trim().ToUpperInvariant();
 
             if (isinGrowth.Length == 12) map[isinGrowth] = nav;
             if (isinReinvest.Length == 12) map[isinReinvest] = nav;

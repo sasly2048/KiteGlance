@@ -439,7 +439,14 @@ public partial class MainWindow : Window
         if (path == _backdropCurrent) return;
         _backdropCurrent = path;
 
-        var brush = MakeBackdropBrush(path, custom);
+        // In light mode the built-in phases are drawn as computed light
+        // gradients rather than the dark-tuned PNGs (which would sit dark under
+        // dark text). Custom user images are shown as-is in either theme.
+        System.Windows.Media.Brush? brush =
+            (!custom && Services.Theme.IsLight)
+                ? Services.LightBackdrop.For(path)
+                : null;
+        brush ??= MakeBackdropBrush(path, custom);
         if (brush is null) return;
 
         // The scrim only earns its keep over user images; built-ins were
